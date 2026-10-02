@@ -375,10 +375,10 @@ vec3 qr(vec4 q,vec3 v){return v+2.0*cross(q.xyz,cross(q.xyz,v)+q.w*v);}
 void main(){vec3 p=qr(iQ,aPos*iPS.w)+iPS.xyz,n=qr(iQ,aN);vec3 w=vec3((p.x-12750.0)*0.025,p.z*0.025,(p.y-12750.0)*0.025);vN=normalize(vec3(n.x,n.z,n.y));vUV=aUV;gl_Position=uVP*vec4(w,1.0);}
 `;
 const OBJ_FS=`#version 300 es
-precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uObjTex;out vec4 o;
-void main(){vec4 c=texture(uObjTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.12||(mx<.025&&mx-mn<.012))discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
+precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uObjTex;uniform int uBlackKey;out vec4 o;
+void main(){vec4 c=texture(uObjTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.12||(uBlackKey==1&&mx<.025&&mx-mn<.012))discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
 `;
-const objProg=program(OBJ_VS,OBJ_FS),objVP=gl.getUniformLocation(objProg,"uVP"),objSampler=gl.getUniformLocation(objProg,"uObjTex");
+const objProg=program(OBJ_VS,OBJ_FS),objVP=gl.getUniformLocation(objProg,"uVP"),objSampler=gl.getUniformLocation(objProg,"uObjTex"),objBlackKey=gl.getUniformLocation(objProg,"uBlackKey");
 async function buildLorenciaObjects(){
  const parsed=parseMuObj(await getBytes("EncTerrain1.obj")),renders=[],entries=[...parsed.groups.entries()];let done=0,failed=0,instances=0;
  for(const [model,list] of entries){
@@ -501,7 +501,7 @@ async function main(){
  statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
  let objectScene={renders:[],instances:0,failed:0},playerScene={renders:[],parts:0,meshes:0,tile:[138,124]},objectsReady=false,playerReady=false;
  const refreshStatus=()=>{
-   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · PJ skin PENDIENTE · ATT/colisiones listas";
+   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · PJ sin black-key · ATT/colisiones listas";
    else if(objectsReady)statusEl.textContent="Lorencia lista · cargando personaje original…";
    else if(playerReady)statusEl.textContent="Dark Wizard original listo · cargando objetos de Lorencia…";
  };
@@ -607,17 +607,20 @@ async function main(){
      gl.useProgram(objProg);gl.uniformMatrix4fv(objVP,false,vp);gl.uniform1i(objSampler,0);
      gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
      gl.activeTexture(gl.TEXTURE0);
+     gl.uniform1i(objBlackKey,1);
      for(const r of objectScene.renders){
        gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);
        gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);
      }
+     // Player textures contain legitimate near-black clothing; never treat black as transparency.
+     gl.uniform1i(objBlackKey,0);
      for(const r of playerScene.renders){
        gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);
        gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);
      }
      gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
    } else if(playerScene.renders.length){
-     gl.useProgram(objProg);gl.uniformMatrix4fv(objVP,false,vp);gl.uniform1i(objSampler,0);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.activeTexture(gl.TEXTURE0);
+     gl.useProgram(objProg);gl.uniformMatrix4fv(objVP,false,vp);gl.uniform1i(objSampler,0);gl.uniform1i(objBlackKey,0);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.activeTexture(gl.TEXTURE0);
      for(const r of playerScene.renders){gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n)}
      gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
    }
