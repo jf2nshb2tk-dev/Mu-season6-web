@@ -284,7 +284,7 @@ function repeatTex(c){
 }
 const objTexCache=new Map();
 async function objectTexture(path){
- const f=path.replaceAll("\\","/").split("/").pop(),dot=f.lastIndexOf("."),base=dot<0?f:f.slice(0,dot),ext=(dot<0?"":f.slice(dot+1)).toLowerCase(),asset=base+(ext==="tga"?".OZT":".OZJ"),key=asset.toLowerCase();
+ const f=path.split(String.fromCharCode(92)).join("/").split("/").pop(),dot=f.lastIndexOf("."),base=dot<0?f:f.slice(0,dot),ext=(dot<0?"":f.slice(dot+1)).toLowerCase(),asset=base+(ext==="tga"?".OZT":".OZJ"),key=asset.toLowerCase();
  if(objTexCache.has(key))return objTexCache.get(key);
  const promise=(async()=>{try{const bytes=await getObjectBytes(asset),c=asset.toLowerCase().endsWith(".ozt")?objectOzt(bytes):await objectOzj(bytes);return repeatTex(c)}catch(e){console.warn("Texture",asset,e);const c=document.createElement("canvas");c.width=c.height=2;const x=c.getContext("2d");x.fillStyle="#8c887c";x.fillRect(0,0,2,2);return repeatTex(c)}})();objTexCache.set(key,promise);return promise;
 }
@@ -364,7 +364,9 @@ async function main(){
    gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,t);gl.uniform1i(gl.getUniformLocation(prog,n),i);
  });
  gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
- statusEl.textContent="Terreno real listo · cargando árboles y edificios…";\n let objectScene={renders:[],instances:0,failed:0};\n buildLorenciaObjects().then(x=>{objectScene=x;statusEl.textContent="Lorencia · "+x.instances+" objetos originales"+(x.failed?" · "+x.failed+" modelos omitidos":"");}).catch(e=>{console.warn(e);statusEl.textContent="Terreno listo · error cargando objetos";});
+ statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
+ let objectScene={renders:[],instances:0,failed:0};
+ buildLorenciaObjects().then(x=>{objectScene=x;statusEl.textContent="Lorencia · "+x.instances+" objetos originales"+(x.failed?" · "+x.failed+" modelos omitidos":"");}).catch(e=>{console.warn(e);statusEl.textContent="Terreno listo · error cargando objetos";});
 
  let yaw=-.72,pitch=.58,dist=145,targetX=26,targetY=6,targetZ=-9,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
  function resize(){
