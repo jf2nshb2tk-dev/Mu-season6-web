@@ -1,0 +1,12 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>MU Season 6 Web</title><style>html,body,canvas{margin:0;width:100%;height:100%;display:block;background:#050608;overflow:hidden}#h{position:fixed;top:12px;left:12px;color:#e4c77b;font:600 14px system-ui;background:#000a;padding:9px 11px;border:1px solid #6e5b2d;border-radius:8px}small{color:#bbb}</style></head><body><canvas id="c"></canvas><div id="h">MU Season 6 Web · prueba iPhone<br><small id="s">iniciando WebGL…</small></div><script>
+const c=document.getElementById('c'),s=document.getElementById('s'),gl=c.getContext('webgl2',{antialias:true});
+if(!gl){s.textContent='WebGL 2 no disponible';throw 0}
+function sh(t,x){let q=gl.createShader(t);gl.shaderSource(q,x);gl.compileShader(q);if(!gl.getShaderParameter(q,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(q);return q}
+let p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,`#version 300 es
+precision highp float;layout(location=0)in vec2 a;uniform float t,asp;out float h;void main(){float z=.10*sin(a.x*8.+t*.25)+.07*cos(a.y*10.)+.035*sin((a.x+a.y)*22.);h=z;vec2 q=a; q.y+=z*.75; q.x/=asp;gl_Position=vec4(q,0,1);}`));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,`#version 300 es
+precision highp float;in float h;out vec4 o;void main(){float g=.30+h*1.8;o=vec4(.12+g*.35,.18+g,.08+g*.20,1.);}`));gl.linkProgram(p);gl.useProgram(p);
+let n=128,v=[],idx=[];for(let y=0;y<=n;y++)for(let x=0;x<=n;x++)v.push(x/n*2.-1,y/n*2.-1);for(let y=0;y<n;y++)for(let x=0;x<n;x++){let i=y*(n+1)+x;idx.push(i,i+1,i+n+1,i+1,i+n+2,i+n+1)}
+let b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);let e=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,e);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(idx),gl.STATIC_DRAW);
+let T=gl.getUniformLocation(p,'t'),A=gl.getUniformLocation(p,'asp'),last=performance.now(),frames=0;
+function f(now){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;gl.viewport(0,0,c.width,c.height);gl.clearColor(.02,.025,.03,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.uniform1f(T,now/1000);gl.uniform1f(A,c.width/c.height);gl.drawElements(gl.TRIANGLES,idx.length,gl.UNSIGNED_INT,0);frames++;if(now-last>1000){s.textContent='WebGL 2 OK · '+frames+' FPS';frames=0;last=now}requestAnimationFrame(f)}requestAnimationFrame(f);
+</script></body></html>
