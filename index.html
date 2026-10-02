@@ -440,7 +440,7 @@ async function main(){
  buildLorenciaObjects().then(x=>{objectScene=x;objectsReady=true;refreshStatus();}).catch(e=>{console.warn(e);statusEl.textContent="Terreno listo · error cargando objetos";});
  buildPlayer(height).then(x=>{playerScene=x;playerReady=true;refreshStatus();}).catch(e=>{console.warn("Player",e);statusEl.textContent="Lorencia lista · error cargando personaje";});
 
- let yaw=-.74,pitch=.40,dist=58,targetX=26.25,targetY=4.0,targetZ=-8.75,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
+ let yaw=-.74,pitch=.36,dist=40,targetX=26.25,targetY=3.2,targetZ=-8.75,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
  function resize(){
    const d=Math.min(devicePixelRatio||1,1.45),w=Math.max(1,Math.floor(innerWidth*d)),h=Math.max(1,Math.floor(innerHeight*d));
    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}
