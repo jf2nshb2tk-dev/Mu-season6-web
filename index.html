@@ -356,8 +356,8 @@ async function buildLorenciaObjects(){
  return{renders,instances,failed};
 }
 async function buildPlayer(height){
- const models=["HelmClass01.bmd","ArmorClass01.bmd","PantClass01.bmd","GloveClass01.bmd","BootClass01.bmd"];
- // The equipment BMDs are linked to Player.bmd in the original client.
+ const models=["HelmClass02.bmd","ArmorClass02.bmd","PantClass02.bmd","GloveClass02.bmd","BootClass02.bmd"];
+ // Dark Wizard in this Season 6 client uses Class02 (skin_wizard_01). The equipment BMDs are linked to Player.bmd.
  // Use PlayerStopMale (action 1), frame 0 as the shared skeleton so body parts don't explode apart.
  const parentModel=parseBmd(await getPlayerBytes("player.bmd"),null,1),parentBones=parentModel.bones;
  const spawnTileX=138,spawnTileY=124,spawnZ=(height.data[spawnTileY*256+spawnTileX]||0)*1.5+2;
