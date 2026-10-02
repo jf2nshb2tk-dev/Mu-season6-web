@@ -364,7 +364,7 @@ function parseBmd(raw,externalWB=null,poseAction=0){
   const nnv=[];for(let i=0;i<nn;i++,p+=20)nnv.push({node:d.getInt16(p,true),v:[d.getFloat32(p+4,true),d.getFloat32(p+8,true),d.getFloat32(p+12,true)]});
   const uv=[];for(let i=0;i<nt;i++,p+=8)uv.push([d.getFloat32(p,true),d.getFloat32(p+4,true)]);
   const tr=[];for(let i=0;i<ntr;i++,p+=64){const poly=b[p],vi=[],ni=[],ti=[];for(let k=0;k<4;k++)vi.push(d.getInt16(p+2+k*2,true));for(let k=0;k<4;k++)ni.push(d.getInt16(p+10+k*2,true));for(let k=0;k<4;k++)ti.push(d.getInt16(p+18+k*2,true));tr.push({poly,vi,ni,ti})}
-  const texture=fixedStr(b,p,32);p+=32;rawMeshes.push({vv,nnv,uv,tr,texture});
+  const texture=fixedStr(b,p,32);p+=32;rawMeshes.push({vv,nnv,uv,tr,texture,meshIndex:m});
  }
  const acts=[];for(let a=0;a<ac;a++){const nk=d.getInt16(p,true);p+=2;const lock=b[p++]!==0;if(lock)p+=nk*12;acts.push({nk})}
  const bones=[];
@@ -391,7 +391,7 @@ function parseBmd(raw,externalWB=null,poseAction=0){
  const meshes=[];
  for(const m of rawMeshes){
   const data=skinRawMesh(m,skinWB);
-  meshes.push({data,texture:m.texture,raw:m});
+  meshes.push({data,texture:m.texture,raw:m,meshIndex:m.meshIndex});
  }
  const byName=new Map();
  for(let i=0;i<bones.length;i++){
@@ -472,7 +472,8 @@ async function buildLorenciaObjects(){
     if(!m.data.length||/shadow/i.test(m.texture))continue;const vao=gl.createVertexArray();gl.bindVertexArray(vao);const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,32,24);
     gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,4,gl.FLOAT,false,32,0);gl.vertexAttribDivisor(3,1);gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,32,16);gl.vertexAttribDivisor(4,1);
-    renders.push({vao,count:m.data.length/8,n:list.length,tex:await objectTexture(m.texture)});
+    const additive=(model.toLowerCase()==="housewall02.bmd"&&m.meshIndex===4)||/(^|[_-])(light|fire|flare|glow)([_-]|\.|$)/i.test(m.texture);
+    renders.push({vao,count:m.data.length/8,n:list.length,tex:await objectTexture(m.texture),additive,model,meshIndex:m.meshIndex,texture:m.texture});
    }
    instances+=list.length;
   }catch(e){failed++;console.warn("Modelo omitido",model,e)}
@@ -570,7 +571,7 @@ async function main(){
  statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
  let objectScene={renders:[],instances:0,failed:0},playerScene={renders:[],parts:0,meshes:0,tile:[138,124]},objectsReady=false,playerReady=false;
  const refreshStatus=()=>{
-   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · PJ 360° · cámara MU hombro derecho · ATT";
+   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · blends MU corregidos · PJ/cámara OK · ATT";
    else if(objectsReady)statusEl.textContent="Lorencia lista · cargando personaje original…";
    else if(playerReady)statusEl.textContent="Dark Wizard original listo · cargando objetos de Lorencia…";
  };
@@ -723,10 +724,25 @@ async function main(){
      gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
      gl.activeTexture(gl.TEXTURE0);
      gl.uniform1i(objBlackKey,1);
+     let additiveMode=false;
      for(const r of objectScene.renders){
+       if(!!r.additive!==additiveMode){
+         additiveMode=!!r.additive;
+         if(additiveMode){
+           // MU/XNA additive meshes: black contributes nothing, so glow/light planes do not appear as black quads.
+           gl.uniform1i(objBlackKey,0);
+           gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+           gl.depthMask(false);
+         }else{
+           gl.uniform1i(objBlackKey,1);
+           gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+           gl.depthMask(true);
+         }
+       }
        gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);
        gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);
      }
+     gl.depthMask(true);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
      // Player textures contain legitimate near-black clothing; never treat black as transparency.
      gl.uniform1i(objBlackKey,0);
      for(const r of playerScene.renders){
