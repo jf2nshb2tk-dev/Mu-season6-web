@@ -28,10 +28,12 @@ jobs:
           NEED_WORLD=0
           NEED_OBJECT1=0
           NEED_PLAYER=0
+          NEED_NPC=0
           [ -f "assets/World1/TerrainHeight.OZB" ] && [ -f "assets/World1/Terrain.obj" ] || NEED_WORLD=1
           [ -f "assets/Object1/Tree01.bmd" ] && [ -f "assets/Object1/House01.bmd" ] || NEED_OBJECT1=1
           [ -f "assets/Player/player.bmd" ] || NEED_PLAYER=1
-          if [ "$NEED_WORLD" = 1 ] || [ "$NEED_OBJECT1" = 1 ] || [ "$NEED_PLAYER" = 1 ]; then
+          [ -f "assets/NPC/Smith01.bmd" ] && [ -f "assets/NPC/Wizard01.bmd" ] || NEED_NPC=1
+          if [ "$NEED_WORLD" = 1 ] || [ "$NEED_OBJECT1" = 1 ] || [ "$NEED_PLAYER" = 1 ] || [ "$NEED_NPC" = 1 ]; then
             echo "Importing original MU Season 6 assets..."
             curl --fail --location --retry 3 \
               "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
@@ -54,10 +56,14 @@ jobs:
               rm -rf assets/Player
               cp -R "/tmp/mu/ClientS6 Base/Data/Player" assets/Player
             fi
+            if [ "$NEED_NPC" = 1 ]; then
+              rm -rf assets/NPC
+              cp -R "/tmp/mu/ClientS6 Base/Data/NPC" assets/NPC
+            fi
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add assets/World1 assets/Object1 assets/Player 2>/dev/null || true
-            git commit -m "Import original MU Lorencia assets" || true
+            git add assets/World1 assets/Object1 assets/Player assets/NPC 2>/dev/null || true
+            git commit -m "Import original MU NPC assets" || true
             git push origin HEAD:main
           fi
       - name: Apply exact original MU terrain layout
