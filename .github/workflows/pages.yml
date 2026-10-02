@@ -21,27 +21,46 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Import original World1 assets once
+      - name: Import original MU assets once
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -f "assets/World1/TerrainHeight.OZB" ] || [ ! -f "assets/World1/map1.OZJ" ]; then
-            echo "Importing original MU Season 6 World1 assets..."
+
+          NEED_WORLD=0
+          NEED_OBJECT1=0
+          [ -f "assets/World1/TerrainHeight.OZB" ] && [ -f "assets/World1/Terrain.obj" ] || NEED_WORLD=1
+          [ -f "assets/Object1/Tree01.bmd" ] && [ -f "assets/Object1/House01.bmd" ] || NEED_OBJECT1=1
+
+          if [ "$NEED_WORLD" -eq 1 ] || [ "$NEED_OBJECT1" -eq 1 ]; then
+            echo "Importing original MU Season 6 assets..."
             curl --fail --location --retry 3 \
               "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
               -o /tmp/ClientS6.Base.rar
+
             sudo apt-get update -qq
             sudo apt-get install -y unar
+
             rm -rf /tmp/mu
             mkdir -p /tmp/mu
             unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
+
             mkdir -p assets
-            rm -rf assets/World1
-            cp -R "/tmp/mu/ClientS6 Base/Data/World1" assets/World1
+
+            if [ "$NEED_WORLD" -eq 1 ]; then
+              rm -rf assets/World1
+              cp -R "/tmp/mu/ClientS6 Base/Data/World1" assets/World1
+              git add assets/World1
+            fi
+
+            if [ "$NEED_OBJECT1" -eq 1 ]; then
+              rm -rf assets/Object1
+              cp -R "/tmp/mu/ClientS6 Base/Data/Object1" assets/Object1
+              git add assets/Object1
+            fi
+
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add assets/World1
-            git commit -m "Import original MU Season 6 World1 assets" || true
+            git commit -m "Import original MU Season 6 Object1 assets" || true
             git push origin HEAD:main
           fi
       - name: Setup Pages
