@@ -61,3 +61,4 @@ elif 'gl.uniform1i(objHideObject,0);gl.disable(gl.CULL_FACE);' not in s:
 
 p.write_text(s, encoding='utf-8')
 print('Lorencia pub roof: HouseWall05/06 now hide on HeroTile 4')
+# Trigger workflow after the workflow file exists.
