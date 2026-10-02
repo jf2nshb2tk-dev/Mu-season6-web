@@ -1,0 +1,29 @@
+name: Inspect MU Interface Assets
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/list-interface-assets.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract and list relevant Interface assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
+            -o /tmp/ClientS6.Base.rar
+          sudo apt-get update -qq
+          sudo apt-get install -y unar
+          rm -rf /tmp/mu && mkdir -p /tmp/mu
+          unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
+          I="/tmp/mu/ClientS6 Base/Data/Interface"
+          echo '=== INTERFACE ROOT ==='
+          find "$I" -maxdepth 1 -type f -printf '%f\n' | sort | head -n 250
+          echo '=== HUD / INVENTORY CANDIDATES ==='
+          find "$I" -type f -printf '%P\n' | grep -Ei '(^|/)(newui|interface|main|frame|inventory|inven|skill|hp|mp|ag|bar|button|character|option|zen|exp|number|tooltip)' | sort | head -n 500
