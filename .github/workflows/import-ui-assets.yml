@@ -1,0 +1,77 @@
+name: Import MU HUD Inventory Assets
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/import-ui-assets.yml
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract selected original Interface files
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
+            -o /tmp/ClientS6.Base.rar
+          sudo apt-get update -qq
+          sudo apt-get install -y unar
+          rm -rf /tmp/mu && mkdir -p /tmp/mu
+          unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
+          SRC="/tmp/mu/ClientS6 Base/Data/Interface"
+          DST="assets/Interface"
+          mkdir -p "$DST"
+          files=(
+            "newui_menu01.OZJ" "newui_menu02.OZJ" "newui_menu02-03.OZJ" "newui_menu03.OZJ"
+            "newui_menu_red.OZJ" "newui_menu_blue.OZJ" "newui_menu_green.OZJ" "newui_menu_AG.OZJ" "newui_menu_SD.OZJ"
+            "newui_menu_Bt01.OZJ" "newui_menu_Bt02.OZJ" "newui_menu_Bt03.OZJ" "newui_menu_Bt04.OZJ"
+            "newui_item_back01.OZT" "newui_item_back02-L.OZT" "newui_item_back02-R.OZT" "newui_item_back03.OZT" "newui_item_back04.OZT"
+            "newui_item_table01(L).OZT" "newui_item_table01(R).OZT" "newui_item_table02(L).OZT" "newui_item_table02(R).OZT"
+            "newui_item_table03(Dw).OZT" "newui_item_table03(L).OZT" "newui_item_table03(R).OZT" "newui_item_table03(Up).OZT"
+            "newui_item_box.OZT" "newui_item_money.OZT" "newui_item_money2.OZT" "newui_item_money3.OZT"
+            "newui_item_cap.OZT" "newui_item_upper.OZT" "newui_item_lower.OZT" "newui_item_gloves.OZT" "newui_item_boots.OZT"
+            "newui_item_weapon(L).OZT" "newui_item_weapon(R).OZT" "newui_item_wing.OZT" "newui_item_necklace.OZT" "newui_item_ring.OZT"
+            "newui_button_close.OZT" "newui_btn_empty.OZT"
+          )
+          for f in "${files[@]}"; do
+            test -f "$SRC/$f" || { echo "Missing $f"; exit 1; }
+            cp "$SRC/$f" "$DST/$f"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          for p in sorted(Path('assets/Interface').iterdir()):
+              b=p.read_bytes()
+              if p.suffix.lower()=='.ozj' and len(b)>40 and b[24:26]==b'\xff\xd8':
+                  # JPEG SOF quick scan
+                  q=26; wh=None
+                  while q+9<len(b):
+                      if b[q]!=0xff: q+=1; continue
+                      marker=b[q+1]; q+=2
+                      if marker in (0xd8,0xd9): continue
+                      if q+2>len(b): break
+                      n=int.from_bytes(b[q:q+2],'big')
+                      if marker in range(0xc0,0xc4) and q+7<len(b):
+                          h=int.from_bytes(b[q+3:q+5],'big'); w=int.from_bytes(b[q+5:q+7],'big'); wh=(w,h); break
+                      q+=max(n,2)
+                  print('UI_META',p.name,'OZJ',len(b),wh)
+              else:
+                  # MU OZT generally stores a TGA stream after a small wrapper. Test offsets.
+                  found=[]
+                  for off in (0,4,8,12,24):
+                      if len(b)>=off+18:
+                          typ=b[off+2]; w=int.from_bytes(b[off+12:off+14],'little'); h=int.from_bytes(b[off+14:off+16],'little'); depth=b[off+16]
+                          if typ in (2,3,10,11) and 0<w<4096 and 0<h<4096 and depth in (8,16,24,32): found.append((off,w,h,depth,typ))
+                  print('UI_META',p.name,'OZT',len(b),found[:2])
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/Interface
+          git commit -m "Import original MU Season 6 HUD and inventory assets" || exit 0
+          git push origin HEAD:main
