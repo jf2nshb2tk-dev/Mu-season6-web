@@ -30,7 +30,7 @@ jobs:
           NEED_PLAYER=0
           [ -f "assets/World1/TerrainHeight.OZB" ] && [ -f "assets/World1/Terrain.obj" ] || NEED_WORLD=1
           [ -f "assets/Object1/Tree01.bmd" ] && [ -f "assets/Object1/House01.bmd" ] || NEED_OBJECT1=1
-          [ -f "assets/Player/Player.bmd" ] || NEED_PLAYER=1
+          [ -f "assets/Player/player.bmd" ] || NEED_PLAYER=1
           if [ "$NEED_WORLD" = 1 ] || [ "$NEED_OBJECT1" = 1 ] || [ "$NEED_PLAYER" = 1 ]; then
             echo "Importing original MU Season 6 assets..."
             curl --fail --location --retry 3 \
