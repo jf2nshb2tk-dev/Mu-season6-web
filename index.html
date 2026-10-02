@@ -1,12 +1,165 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>MU Season 6 Web</title><style>html,body,canvas{margin:0;width:100%;height:100%;display:block;background:#050608;overflow:hidden}#h{position:fixed;top:12px;left:12px;color:#e4c77b;font:600 14px system-ui;background:#000a;padding:9px 11px;border:1px solid #6e5b2d;border-radius:8px}small{color:#bbb}</style></head><body><canvas id="c"></canvas><div id="h">MU Season 6 Web · prueba iPhone<br><small id="s">iniciando WebGL…</small></div><script>
-const c=document.getElementById('c'),s=document.getElementById('s'),gl=c.getContext('webgl2',{antialias:true});
-if(!gl){s.textContent='WebGL 2 no disponible';throw 0}
-function sh(t,x){let q=gl.createShader(t);gl.shaderSource(q,x);gl.compileShader(q);if(!gl.getShaderParameter(q,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(q);return q}
-let p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,`#version 300 es
-precision highp float;layout(location=0)in vec2 a;uniform float t,asp;out float h;void main(){float z=.10*sin(a.x*8.+t*.25)+.07*cos(a.y*10.)+.035*sin((a.x+a.y)*22.);h=z;vec2 q=a; q.y+=z*.75; q.x/=asp;gl_Position=vec4(q,0,1);}`));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,`#version 300 es
-precision highp float;in float h;out vec4 o;void main(){float g=.30+h*1.8;o=vec4(.12+g*.35,.18+g,.08+g*.20,1.);}`));gl.linkProgram(p);gl.useProgram(p);
-let n=128,v=[],idx=[];for(let y=0;y<=n;y++)for(let x=0;x<=n;x++)v.push(x/n*2.-1,y/n*2.-1);for(let y=0;y<n;y++)for(let x=0;x<n;x++){let i=y*(n+1)+x;idx.push(i,i+1,i+n+1,i+1,i+n+2,i+n+1)}
-let b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);let e=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,e);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(idx),gl.STATIC_DRAW);
-let T=gl.getUniformLocation(p,'t'),A=gl.getUniformLocation(p,'asp'),last=performance.now(),frames=0;
-function f(now){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;gl.viewport(0,0,c.width,c.height);gl.clearColor(.02,.025,.03,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.uniform1f(T,now/1000);gl.uniform1f(A,c.width/c.height);gl.drawElements(gl.TRIANGLES,idx.length,gl.UNSIGNED_INT,0);frames++;if(now-last>1000){s.textContent='WebGL 2 OK · '+frames+' FPS';frames=0;last=now}requestAnimationFrame(f)}requestAnimationFrame(f);
-</script></body></html>
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>MU Season 6 Web · Lorencia</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#030507;color:#eee;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#hud{position:fixed;z-index:4;left:max(10px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));background:#050505cc;border:1px solid #7d6637;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.45;box-shadow:0 3px 18px #0008;pointer-events:none}
+#hud b{color:#e2c577;font-size:13px}
+#status{color:#d7d7d7}
+#hint{position:fixed;z-index:4;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));padding:7px 9px;background:#000a;border:1px solid #444;border-radius:7px;color:#bbb;font-size:11px;pointer-events:none}
+#error{display:none;position:fixed;inset:0;background:#050505;color:#fff;padding:24px;z-index:10;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="hud"><b>MU Season 6 Web · World1 / Lorencia</b><br><span id="status">Cargando archivos originales…</span><br><span id="fps"></span></div>
+<div id="hint">Arrastrá: cámara · Pellizco: zoom</div>
+<div id="error"></div>
+<script>
+const $=s=>document.querySelector(s), canvas=$("#gl"), statusEl=$("#status"), fpsEl=$("#fps"), errorEl=$("#error");
+function fail(e){console.error(e);errorEl.style.display="block";errorEl.textContent="Error cargando World1:\n"+(e?.stack||e);statusEl.textContent="Error";}
+const gl=canvas.getContext("webgl2",{antialias:true,alpha:false,powerPreference:"high-performance"});
+if(!gl) fail("WebGL 2 no está disponible en este navegador.");
+
+const WORLD="assets/World1/";
+async function getBytes(name){
+  const r=await fetch(WORLD+name,{cache:"no-store"});
+  if(!r.ok) throw new Error(name+" HTTP "+r.status);
+  return new Uint8Array(await r.arrayBuffer());
+}
+function findSeq(a,seq,start=0){
+  outer:for(let i=start;i<=a.length-seq.length;i++){for(let j=0;j<seq.length;j++)if(a[i+j]!==seq[j])continue outer;return i}return -1;
+}
+function decodeHeightOZB(bytes){
+  const off=findSeq(bytes,[0x42,0x4d]);
+  if(off<0) throw new Error("TerrainHeight.OZB: BMP interno no encontrado");
+  const dv=new DataView(bytes.buffer,bytes.byteOffset+off,bytes.byteLength-off);
+  const px=dv.getUint32(10,true), w=dv.getInt32(18,true), hs=dv.getInt32(22,true), bpp=dv.getUint16(28,true), comp=dv.getUint32(30,true);
+  if(bpp!==8||comp!==0) throw new Error("TerrainHeight.OZB: BMP no soportado ("+bpp+" bpp)");
+  const h=Math.abs(hs), stride=Math.floor((w*bpp+31)/32)*4, out=new Uint8Array(w*h), bottomUp=hs>0;
+  for(let y=0;y<h;y++){
+    const sy=bottomUp?(h-1-y):y, row=off+px+sy*stride;
+    out.set(bytes.subarray(row,row+w),y*w);
+  }
+  return {w,h,data:out};
+}
+async function decodeOZJ(bytes){
+  const off=findSeq(bytes,[0xff,0xd8,0xff]);
+  if(off<0) throw new Error("map1.OZJ: JPEG interno no encontrado");
+  const blob=new Blob([bytes.subarray(off)],{type:"image/jpeg"}), url=URL.createObjectURL(blob);
+  try{
+    const img=new Image();
+    img.decoding="async";
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error("No se pudo decodificar map1.OZJ"));img.src=url});
+    return img;
+  } finally { setTimeout(()=>URL.revokeObjectURL(url),1000); }
+}
+function shader(type,src){
+  const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;
+}
+function program(vs,fs){
+  const p=gl.createProgram();gl.attachShader(p,shader(gl.VERTEX_SHADER,vs));gl.attachShader(p,shader(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;
+}
+const VS=`#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+uniform mat4 uMVP;
+uniform vec3 uLightDir;
+out vec2 vUV;
+out float vLight;
+void main(){
+  vUV=aUV;
+  float hL=clamp(.55+aPos.y/90.0,.42,1.0);
+  vLight=hL;
+  gl_Position=uMVP*vec4(aPos,1.0);
+}`;
+const FS=`#version 300 es
+precision highp float;
+in vec2 vUV;
+in float vLight;
+uniform sampler2D uTex;
+out vec4 outColor;
+void main(){
+  vec3 c=texture(uTex,vUV).rgb;
+  c*=vLight;
+  float vign=1.0-smoothstep(.52,.86,distance(vUV,vec2(.5)))*.18;
+  outColor=vec4(c*vign,1.0);
+}`;
+const prog=program(VS,FS), uMVP=gl.getUniformLocation(prog,"uMVP");
+
+function perspective(fovy,aspect,near,far){
+  const f=1/Math.tan(fovy/2), nf=1/(near-far);
+  return new Float32Array([f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0]);
+}
+function lookAt(e,t,u){
+  let zx=e[0]-t[0],zy=e[1]-t[1],zz=e[2]-t[2],zl=Math.hypot(zx,zy,zz);zx/=zl;zy/=zl;zz/=zl;
+  let xx=u[1]*zz-u[2]*zy,xy=u[2]*zx-u[0]*zz,xz=u[0]*zy-u[1]*zx,xl=Math.hypot(xx,xy,xz);xx/=xl;xy/=xl;xz/=xl;
+  let yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+  return new Float32Array([xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0, -(xx*e[0]+xy*e[1]+xz*e[2]),-(yx*e[0]+yy*e[1]+yz*e[2]),-(zx*e[0]+zy*e[1]+zz*e[2]),1]);
+}
+function mul(a,b){
+  const o=new Float32Array(16);
+  for(let c=0;c<4;c++)for(let r=0;r<4;r++)o[c*4+r]=a[0*4+r]*b[c*4+0]+a[1*4+r]*b[c*4+1]+a[2*4+r]*b[c*4+2]+a[3*4+r]*b[c*4+3];
+  return o;
+}
+
+async function main(){
+  if(!gl) return;
+  const [hb,jb]=await Promise.all([getBytes("TerrainHeight.OZB"),getBytes("map1.OZJ")]);
+  statusEl.textContent="Decodificando TerrainHeight.OZB + map1.OZJ…";
+  const height=decodeHeightOZB(hb), mapImg=await decodeOZJ(jb);
+
+  const N=128, cell=3.5, heightScale=0.19, verts=new Float32Array((N+1)*(N+1)*5), inds=new Uint32Array(N*N*6);
+  let k=0;
+  for(let z=0;z<=N;z++)for(let x=0;x<=N;x++){
+    const sx=Math.min(height.w-1,Math.round(x/N*(height.w-1))), sy=Math.min(height.h-1,Math.round(z/N*(height.h-1)));
+    const hv=height.data[sy*height.w+sx]*heightScale;
+    verts[k++]=(x-N/2)*cell; verts[k++]=hv; verts[k++]=(z-N/2)*cell; verts[k++]=x/N; verts[k++]=1-z/N;
+  }
+  k=0;
+  for(let z=0;z<N;z++)for(let x=0;x<N;x++){
+    const a=z*(N+1)+x,b=a+1,c=a+(N+1),d=c+1;
+    inds[k++]=a;inds[k++]=c;inds[k++]=b;inds[k++]=b;inds[k++]=c;inds[k++]=d;
+  }
+  const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+  const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,20,0);
+  gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,2,gl.FLOAT,false,20,12);
+  const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,inds,gl.STATIC_DRAW);
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,mapImg);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.generateMipmap(gl.TEXTURE_2D);
+
+  gl.useProgram(prog);gl.uniform1i(gl.getUniformLocation(prog,"uTex"),0);gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
+  statusEl.textContent="World1 original cargado";
+  let yaw=-0.78,pitch=0.82,dist=430,targetY=18,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
+  function resize(){const d=Math.min(devicePixelRatio||1,1.5),w=Math.max(1,Math.floor(innerWidth*d)),h=Math.max(1,Math.floor(innerHeight*d));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}}
+  function frame(t){
+    resize();
+    const cp=Math.cos(pitch),sp=Math.sin(pitch), eye=[Math.cos(yaw)*cp*dist,sp*dist+targetY,Math.sin(yaw)*cp*dist];
+    gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,mul(perspective(.70,canvas.width/canvas.height,.1,1400),lookAt(eye,[0,targetY,0],[0,1,0])));
+    gl.clearColor(.018,.022,.026,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.bindVertexArray(vao);gl.drawElements(gl.TRIANGLES,inds.length,gl.UNSIGNED_INT,0);
+    frames++;if(t-lastT>750){fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+height.w+"×"+height.h+" alturas · "+mapImg.naturalWidth+"×"+mapImg.naturalHeight+" mapa";frames=0;lastT=t}
+    requestAnimationFrame(frame);
+  }
+  canvas.addEventListener("pointerdown",e=>{drag=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId)});
+  canvas.addEventListener("pointermove",e=>{if(!drag)return;yaw+=(e.clientX-lastX)*.0055;pitch=Math.max(.30,Math.min(1.25,pitch+(e.clientY-lastY)*.0045));lastX=e.clientX;lastY=e.clientY});
+  canvas.addEventListener("pointerup",()=>drag=false);canvas.addEventListener("pointercancel",()=>drag=false);
+  canvas.addEventListener("wheel",e=>{e.preventDefault();dist=Math.max(120,Math.min(760,dist+e.deltaY*.28))},{passive:false});
+  canvas.addEventListener("touchstart",e=>{if(e.touches.length===2)pinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY)},{passive:true});
+  canvas.addEventListener("touchmove",e=>{if(e.touches.length===2){e.preventDefault();const q=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(pinch)dist=Math.max(120,Math.min(760,dist+(pinch-q)*.8));pinch=q}},{passive:false});
+  canvas.addEventListener("touchend",()=>pinch=0,{passive:true});
+  requestAnimationFrame(frame);
+}
+main().catch(fail);
+</script>
+</body>
+</html>
