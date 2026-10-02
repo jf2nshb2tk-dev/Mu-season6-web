@@ -279,20 +279,38 @@ function parseBmd(raw,externalWB=null,poseAction=0){
  const acts=[];for(let a=0;a<ac;a++){const nk=d.getInt16(p,true);p+=2;const lock=b[p++]!==0;if(lock)p+=nk*12;acts.push({nk})}
  const bones=[];
  for(let i=0;i<bc;i++){
-  const dummy=b[p++]!==0;if(dummy){bones.push({dummy:true,parent:-1,pos:[0,0,0],rot:[0,0,0]});continue}
-  p+=32;const parent=d.getInt16(p,true);p+=2;let pos=[0,0,0],rot=[0,0,0];
+  const dummy=b[p++]!==0;if(dummy){bones.push({dummy:true,name:"",parent:-1,pos:[0,0,0],rot:[0,0,0]});continue}
+  const boneName=fixedStr(b,p,32);p+=32;const parent=d.getInt16(p,true);p+=2;let pos=[0,0,0],rot=[0,0,0];
   for(let a=0;a<ac;a++){const nk=acts[a].nk,ps=p;if(a===poseAction&&nk)pos=[d.getFloat32(ps,true),d.getFloat32(ps+4,true),d.getFloat32(ps+8,true)];p+=nk*12;const rs=p;if(a===poseAction&&nk)rot=[d.getFloat32(rs,true),d.getFloat32(rs+4,true),d.getFloat32(rs+8,true)];p+=nk*12}
-  bones.push({dummy:false,parent,pos,rot});
+  bones.push({dummy:false,name:boneName,parent,pos,rot});
  }
  const wb=[];
  for(let i=0;i<bones.length;i++){const x=bones[i];if(x.dummy){wb.push({q:[0,0,0,1],p:[0,0,0]});continue}const lq=quatEuler(x.rot);if(x.parent>=0&&x.parent<wb.length){const pa=wb[x.parent],qr=quatMul(pa.q,lq),rp=quatRot(pa.q,x.pos),ll=Math.hypot(...qr)||1;wb.push({q:qr.map(v=>v/ll),p:[rp[0]+pa.p[0],rp[1]+pa.p[1],rp[2]+pa.p[2]]})}else wb.push({q:lq,p:x.pos})}
- const skinWB=externalWB||wb,meshes=[];
+ let skinWB=wb;
+ if(externalWB){
+   // LinkParentAnimation equivalent: body-part BMDs have their own 56-bone tables,
+   // while Player.bmd has 60 bones. Resolve shared transforms by bone name, not index.
+   const byName=externalWB.byName||null;
+   if(byName){
+     skinWB=bones.map((bone,i)=>{
+       if(bone&&!bone.dummy&&bone.name&&byName.has(bone.name))return byName.get(bone.name);
+       return externalWB.world?.[i]||wb[i]||{q:[0,0,0,1],p:[0,0,0]};
+     });
+   }else if(Array.isArray(externalWB)) skinWB=externalWB;
+ }
+ const meshes=[];
  for(const m of rawMeshes){
   const a=[];const emit=k=>{const v=m.vv[k.vi],n=m.nnv[k.ni],uv=m.uv[k.ti]||[0,0];if(!v)return;const bv=skinWB[v.node]||{q:[0,0,0,1],p:[0,0,0]},r=quatRot(bv.q,v.v),pp=[r[0]+bv.p[0],r[1]+bv.p[1],r[2]+bv.p[2]],bn=n?(skinWB[n.node]||bv):bv,nr=n?quatRot(bn.q,n.v):[0,0,1],nl=Math.hypot(...nr)||1;a.push(pp[0],pp[1],pp[2],nr[0]/nl,nr[1]/nl,nr[2]/nl,uv[0],uv[1])};
   for(const t of m.tr){const n=Math.min(Math.max(t.poly,0),4);if(n<3)continue;const q=[];for(let k=0;k<n;k++)q.push({vi:t.vi[k],ni:t.ni[k],ti:t.ti[k]});emit(q[0]);emit(q[1]);emit(q[2]);if(n===4){emit(q[0]);emit(q[2]);emit(q[3])}}
   meshes.push({data:new Float32Array(a),texture:m.texture});
  }
+ const byName=new Map();
+ for(let i=0;i<bones.length;i++){
+   const bone=bones[i];
+   if(bone&&!bone.dummy&&bone.name)byName.set(bone.name,wb[i]);
+ }
  meshes.bones=wb;
+ meshes.skeleton={world:wb,byName,bones};
  return meshes;
 }
 async function objectOzj(bytes){
@@ -377,8 +395,8 @@ async function buildPlayer(height){
  const models=["HelmClass01.bmd","ArmorClass01.bmd","PantClass01.bmd","GloveClass01.bmd","BootClass01.bmd"];
  // Dark Wizard base body in this client is Class01. These parts share the Player.bmd skeleton.
  // Player.bmd is the authoritative shared skeleton. PlayerStopMale is action 0, frame 0.
- // Class01 body parts use the parent BoneTransform exactly like LinkParentAnimation in the original client.
- const parentModel=parseBmd(await getPlayerBytes("player.bmd"),null,0),parentBones=parentModel.bones;
+ // Class01 body parts resolve their local bone table to Player.bmd by bone name, matching LinkParentAnimation semantics.
+ const parentModel=parseBmd(await getPlayerBytes("player.bmd"),null,0),parentSkeleton=parentModel.skeleton;
  const spawnTileX=138,spawnTileY=124,spawnZ=(height.data[spawnTileY*256+spawnTileX]||0)*1.5+2;
  const facing=quatEuler([0,0,Math.PI*.25]);
  const idata=new Float32Array([spawnTileX*100,spawnTileY*100,spawnZ,.85,facing[0],facing[1],facing[2],facing[3]]);
@@ -400,7 +418,7 @@ async function buildPlayer(height){
    meshesLoaded++;
  }
  for(const model of models){
-   const meshes=parseBmd(await getPlayerBytes(model),parentBones,0);
+   const meshes=parseBmd(await getPlayerBytes(model),parentSkeleton,0);
    for(const m of meshes){
      if(!m.data.length||/shadow/i.test(m.texture))continue;
      const vao=gl.createVertexArray();gl.bindVertexArray(vao);
