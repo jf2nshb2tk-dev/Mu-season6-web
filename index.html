@@ -391,6 +391,10 @@ async function main(){
    const cp=Math.cos(pitch),sp=Math.sin(pitch),eye=[targetX+Math.cos(yaw)*cp*dist,sp*dist+targetY,targetZ+Math.sin(yaw)*cp*dist];
    const vp=mul(perspective(.68,canvas.width/canvas.height,.1,1800),lookAt(eye,[targetX,targetY,targetZ],[0,1,0]));
    gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,vp);gl.uniform1f(uTime,t/1000);
+   // Object rendering uses texture unit 0. Rebind every terrain texture each frame
+   // so the terrain does not start sampling the last loaded Object1 texture.
+   const terrainTex=[atlasTex,l1Tex,l2Tex,alphaTex,lightTex];
+   for(let i=0;i<terrainTex.length;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,terrainTex[i]);}
    gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
    gl.clearColor(.012,.015,.018,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
    gl.bindVertexArray(vao);gl.drawElements(gl.TRIANGLES,inds.length,gl.UNSIGNED_INT,0);
