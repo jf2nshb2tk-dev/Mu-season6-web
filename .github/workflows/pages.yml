@@ -60,6 +60,22 @@ jobs:
             git commit -m "Import original Lorencia Object1 assets" || true
             git push origin HEAD:main
           fi
+      - name: Apply original MU TerrainHeight row order
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old=''' const h=Math.abs(hs), stride=Math.floor((w*bpp+31)/32)*4, out=new Uint8Array(w*h), bottomUp=hs>0;\n for(let y=0;y<h;y++){const sy=bottomUp?(h-1-y):y;out.set(bytes.subarray(off+px+sy*stride,off+px+sy*stride+w),y*w)}'''
+          new=''' const h=Math.abs(hs), stride=Math.floor((w*bpp+31)/32)*4, out=new Uint8Array(w*h);\n // MU does NOT reinterpret TerrainHeight.OZB as a display image. The original\n // client seeks to the 8-bit BMP pixel payload and reads the 65536 height bytes\n // sequentially into TerrainHeight, so keep the file row order exactly as stored.\n for(let y=0;y<h;y++){const sy=y;out.set(bytes.subarray(off+px+sy*stride,off+px+sy*stride+w),y*w)}'''
+          if old in s:
+              s=s.replace(old,new,1)
+          elif 'MU does NOT reinterpret TerrainHeight.OZB as a display image.' not in s:
+              raise SystemExit('TerrainHeight row-order anchor not found')
+          p.write_text(s,encoding='utf-8')
+          print('TerrainHeight uses original MU raw BMP row order')
+          PY
       - name: Apply Bridge01 pivot correction
         shell: bash
         run: |
@@ -108,8 +124,6 @@ jobs:
 
           # Original MU renders each terrain tile as a triangle fan ordered
           # TL -> TR -> BR -> BL, i.e. the diagonal is TL -> BR.
-          # The web port used the opposite TR -> BL diagonal, which deforms
-          # steep transitions such as Lorencia's bridge/ramp terrain.
           old_idx='inds[k++]=a;inds[k++]=c;inds[k++]=b;inds[k++]=b;inds[k++]=c;inds[k++]=d;'
           new_idx='inds[k++]=a;inds[k++]=d;inds[k++]=b;inds[k++]=a;inds[k++]=c;inds[k++]=d;'
           if old_idx in s:
