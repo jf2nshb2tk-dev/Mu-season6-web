@@ -27,16 +27,14 @@ jobs:
           set -euo pipefail
           if [ ! -f "assets/World1/TerrainHeight.OZB" ] || [ ! -f "assets/World1/map1.OZJ" ]; then
             echo "Importing original MU Season 6 World1 assets..."
-            mkdir -p /tmp/mu
             curl --fail --location --retry 3 \
               "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
               -o /tmp/ClientS6.Base.rar
-            if command -v 7zz >/dev/null 2>&1; then Z7=7zz; elif command -v 7z >/dev/null 2>&1; then Z7=7z; else
-              sudo apt-get update
-              sudo apt-get install -y p7zip-full
-              Z7=7z
-            fi
-            "$Z7" x /tmp/ClientS6.Base.rar -o/tmp/mu "ClientS6 Base/Data/World1/*" -y
+            sudo apt-get update -qq
+            sudo apt-get install -y unar
+            rm -rf /tmp/mu
+            mkdir -p /tmp/mu
+            unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
             mkdir -p assets
             rm -rf assets/World1
             cp -R "/tmp/mu/ClientS6 Base/Data/World1" assets/World1
