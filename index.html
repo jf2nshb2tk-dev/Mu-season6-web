@@ -292,11 +292,33 @@ function repeatTex(c){
  const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);gl.generateMipmap(gl.TEXTURE_2D);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);return t;
 }
+function applyLegacyBlackKey(c){
+ const x=c.getContext("2d"),im=x.getImageData(0,0,c.width,c.height),d=im.data;
+ for(let i=0;i<d.length;i+=4){
+   const r=d[i],g=d[i+1],b=d[i+2],mx=Math.max(r,g,b),mn=Math.min(r,g,b),ch=mx-mn;
+   if(mx<24){d[i+3]=0}
+   else if(mx<52&&ch<18){d[i+3]=Math.min(d[i+3],Math.round((mx-24)/28*255))}
+ }
+ x.putImageData(im,0,0);return c;
+}
+const PLAYER="assets/Player/";
+async function getPlayerBytes(name){
+ const r=await fetch(PLAYER+name,{cache:"no-store"});
+ if(!r.ok)throw new Error(name+" HTTP "+r.status);
+ return new Uint8Array(await r.arrayBuffer());
+}
 const objTexCache=new Map();
 async function objectTexture(path){
  const f=path.split(String.fromCharCode(92)).join("/").split("/").pop(),dot=f.lastIndexOf("."),base=dot<0?f:f.slice(0,dot),ext=(dot<0?"":f.slice(dot+1)).toLowerCase(),asset=base+(ext==="tga"?".OZT":".OZJ"),key=asset.toLowerCase();
  if(objTexCache.has(key))return objTexCache.get(key);
- const promise=(async()=>{try{const bytes=await getObjectBytes(asset),c=asset.toLowerCase().endsWith(".ozt")?objectOzt(bytes):await objectOzj(bytes);return repeatTex(c)}catch(e){console.warn("Texture",asset,e);const c=document.createElement("canvas");c.width=c.height=2;const x=c.getContext("2d");x.fillStyle="#8c887c";x.fillRect(0,0,2,2);return repeatTex(c)}})();objTexCache.set(key,promise);return promise;
+ const promise=(async()=>{try{const bytes=await getObjectBytes(asset),isOzt=asset.toLowerCase().endsWith(".ozt"),c=isOzt?objectOzt(bytes):await objectOzj(bytes);if(!isOzt&&/(tree|leaf|grass)/i.test(base))applyLegacyBlackKey(c);return repeatTex(c)}catch(e){console.warn("Texture",asset,e);const c=document.createElement("canvas");c.width=c.height=2;const x=c.getContext("2d");x.fillStyle="#8c887c";x.fillRect(0,0,2,2);return repeatTex(c)}})();objTexCache.set(key,promise);return promise;
+}
+const playerTexCache=new Map();
+async function playerTexture(path){
+ const f=path.split(String.fromCharCode(92)).join("/").split("/").pop(),dot=f.lastIndexOf("."),base=dot<0?f:f.slice(0,dot),ext=(dot<0?"":f.slice(dot+1)).toLowerCase(),asset=base+(ext==="tga"?".OZT":".OZJ"),key=asset.toLowerCase();
+ if(playerTexCache.has(key))return playerTexCache.get(key);
+ const promise=(async()=>{try{const bytes=await getPlayerBytes(asset),cv=asset.toLowerCase().endsWith(".ozt")?objectOzt(bytes):await objectOzj(bytes);return repeatTex(cv)}catch(e){console.warn("Player texture",asset,e);const cv=document.createElement("canvas");cv.width=cv.height=2;const x=cv.getContext("2d");x.fillStyle="#c6a77c";x.fillRect(0,0,2,2);return repeatTex(cv)}})();
+ playerTexCache.set(key,promise);return promise;
 }
 const OBJ_VS=`#version 300 es
 precision highp float;
@@ -307,7 +329,7 @@ void main(){vec3 p=qr(iQ,aPos*iPS.w)+iPS.xyz,n=qr(iQ,aN);vec3 w=vec3((p.x-12750.
 `;
 const OBJ_FS=`#version 300 es
 precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uObjTex;out vec4 o;
-void main(){vec4 c=texture(uObjTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.16||(mx<.075&&mx-mn<.035))discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
+void main(){vec4 c=texture(uObjTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.12||(mx<.025&&mx-mn<.012))discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
 `;
 const objProg=program(OBJ_VS,OBJ_FS),objVP=gl.getUniformLocation(objProg,"uVP"),objSampler=gl.getUniformLocation(objProg,"uObjTex");
 async function buildLorenciaObjects(){
@@ -329,6 +351,31 @@ async function buildLorenciaObjects(){
   done++;await new Promise(r=>setTimeout(r,0));
  }
  return{renders,instances,failed};
+}
+async function buildPlayer(height){
+ const models=["HelmClass01.bmd","ArmorClass01.bmd","PantClass01.bmd","GloveClass01.bmd","BootClass01.bmd"];
+ const spawnTileX=138,spawnTileY=124,spawnZ=(height.data[spawnTileY*256+spawnTileX]||0)*1.5+2;
+ const facing=quatEuler([0,0,Math.PI*.25]);
+ const idata=new Float32Array([spawnTileX*100,spawnTileY*100,spawnZ,.85,facing[0],facing[1],facing[2],facing[3]]);
+ const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.STATIC_DRAW);
+ const renders=[];let meshesLoaded=0;
+ for(const model of models){
+   const meshes=parseBmd(await getPlayerBytes(model));
+   for(const m of meshes){
+     if(!m.data.length||/shadow/i.test(m.texture))continue;
+     const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+     const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);
+     gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);
+     gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);
+     gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,32,24);
+     gl.bindBuffer(gl.ARRAY_BUFFER,inst);
+     gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,4,gl.FLOAT,false,32,0);gl.vertexAttribDivisor(3,1);
+     gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,32,16);gl.vertexAttribDivisor(4,1);
+     renders.push({vao,count:m.data.length/8,n:1,tex:await playerTexture(m.texture)});
+     meshesLoaded++;
+   }
+ }
+ return{renders,parts:models.length,meshes:meshesLoaded,tile:[spawnTileX,spawnTileY]};
 }
 
 async function main(){
@@ -378,10 +425,16 @@ async function main(){
  gl.uniform2fv(gl.getUniformLocation(prog,"uTileScale[0]"),tileScales);
  gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
  statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
- let objectScene={renders:[],instances:0,failed:0};
- buildLorenciaObjects().then(x=>{objectScene=x;statusEl.textContent="Lorencia · "+x.instances+" objetos originales"+(x.failed?" · "+x.failed+" modelos omitidos":"");}).catch(e=>{console.warn(e);statusEl.textContent="Terreno listo · error cargando objetos";});
+ let objectScene={renders:[],instances:0,failed:0},playerScene={renders:[],parts:0,meshes:0,tile:[138,124]},objectsReady=false,playerReady=false;
+ const refreshStatus=()=>{
+   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · Dark Wizard original @ 138,124";
+   else if(objectsReady)statusEl.textContent="Lorencia lista · cargando personaje original…";
+   else if(playerReady)statusEl.textContent="Dark Wizard original listo · cargando objetos de Lorencia…";
+ };
+ buildLorenciaObjects().then(x=>{objectScene=x;objectsReady=true;refreshStatus();}).catch(e=>{console.warn(e);statusEl.textContent="Terreno listo · error cargando objetos";});
+ buildPlayer(height).then(x=>{playerScene=x;playerReady=true;refreshStatus();}).catch(e=>{console.warn("Player",e);statusEl.textContent="Lorencia lista · error cargando personaje";});
 
- let yaw=-.72,pitch=.58,dist=145,targetX=26,targetY=6,targetZ=-9,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
+ let yaw=-.72,pitch=.58,dist=105,targetX=26.25,targetY=5,targetZ=-8.75,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
  function resize(){
    const d=Math.min(devicePixelRatio||1,1.45),w=Math.max(1,Math.floor(innerWidth*d)),h=Math.max(1,Math.floor(innerHeight*d));
    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}
@@ -407,10 +460,18 @@ async function main(){
        gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);
        gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);
      }
+     for(const r of playerScene.renders){
+       gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);
+       gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);
+     }
+     gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
+   } else if(playerScene.renders.length){
+     gl.useProgram(objProg);gl.uniformMatrix4fv(objVP,false,vp);gl.uniform1i(objSampler,0);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.activeTexture(gl.TEXTURE0);
+     for(const r of playerScene.renders){gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n)}
      gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
    }
 
-   frames++;if(t-lastT>750){fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos MU · EncTerrain1.map real";frames=0;lastT=t}
+   frames++;if(t-lastT>750){fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos MU · "+(playerReady?"Dark Wizard":"cargando PJ")+" · EncTerrain1.map real";frames=0;lastT=t}
    requestAnimationFrame(frame);
  }
  canvas.addEventListener("pointerdown",e=>{drag=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId)});
