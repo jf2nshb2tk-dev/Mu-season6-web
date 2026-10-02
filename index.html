@@ -59,7 +59,7 @@ async function ozjToCanvas(bytes,size=256){
  try{
   const img=new Image();img.decoding="async";
   await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error("JPEG interno OZJ inválido"));img.src=url});
-  const c=document.createElement("canvas");c.width=size;c.height=size;const x=c.getContext("2d");
+  const c=document.createElement("canvas");c.width=size;c.height=size;c._srcW=img.naturalWidth;c._srcH=img.naturalHeight;const x=c.getContext("2d");
   const topDown=bytes[17]!==0;
   x.save();
   if(!topDown){x.translate(0,size);x.scale(1,-1)}
@@ -69,9 +69,16 @@ async function ozjToCanvas(bytes,size=256){
  } finally {URL.revokeObjectURL(url)}
 }
 function parseTerrainMap(bytes){
- if(bytes.length!==196609)throw new Error("Terrain.map inesperado: "+bytes.length+" bytes");
- const n=65536, o=1;
- return {layer1:bytes.slice(o,o+n),layer2:bytes.slice(o+n,o+2*n),alpha:bytes.slice(o+2*n,o+3*n)};
+ const n=65536;
+ if(bytes.length===196610){
+   const o=2;
+   return {version:bytes[0],map:bytes[1],layer1:bytes.slice(o,o+n),layer2:bytes.slice(o+n,o+2*n),alpha:bytes.slice(o+2*n,o+3*n)};
+ }
+ if(bytes.length===196609){
+   const o=1;
+   return {version:bytes[0],map:1,layer1:bytes.slice(o,o+n),layer2:bytes.slice(o+n,o+2*n),alpha:bytes.slice(o+2*n,o+3*n)};
+ }
+ throw new Error("Terrain map inesperado: "+bytes.length+" bytes");
 }
 function shader(type,src){
  const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
@@ -102,6 +109,7 @@ uniform sampler2D uLayer1;
 uniform sampler2D uLayer2;
 uniform sampler2D uAlpha;
 uniform sampler2D uLight;
+uniform vec2 uTileScale[14];
 uniform float uTime;
 out vec4 outColor;
 
@@ -109,9 +117,11 @@ float mapByte(sampler2D t, ivec2 p){
  p=clamp(p,ivec2(0),ivec2(255));
  return floor(texelFetch(t,p,0).r*255.0+0.5);
 }
-vec3 tileSample(float id, vec2 localUV){
- float col=mod(id,4.0), row=floor(id/4.0);
- vec2 q=clamp(localUV,vec2(.006),vec2(.994));
+vec3 tileSample(float id, vec2 worldGrid){
+ int idx=int(clamp(floor(id+0.5),0.0,13.0));
+ float col=float(idx%4), row=float(idx/4);
+ vec2 q=fract(worldGrid*uTileScale[idx]);
+ q=clamp(q,vec2(.004),vec2(.996));
  return texture(uAtlas,(vec2(col,row)+q)/4.0).rgb;
 }
 void main(){
@@ -128,14 +138,14 @@ void main(){
  float a11=mapByte(uAlpha,cell+ivec2(1,1))/255.0;
  float a=mix(mix(a00,a10,f.x),mix(a01,a11,f.x),f.y);
 
- vec2 uv=f;
- if(id1==5.0)uv=fract(uv+vec2(sin(uTime*.45+vMapUV.y*14.0),cos(uTime*.38+vMapUV.x*13.0))*.015);
- vec3 base=tileSample(min(id1,13.0),uv);
+ vec2 uvGrid=grid;
+ if(id1==5.0)uvGrid+=vec2(sin(uTime*.45+vMapUV.y*14.0),cos(uTime*.38+vMapUV.x*13.0))*.06;
+ vec3 base=tileSample(min(id1,13.0),uvGrid);
  vec3 col=base;
  if(id2<14.0){
-   vec2 uv2=f;
-   if(id2==5.0)uv2=fract(uv2+vec2(cos(uTime*.32+vMapUV.x*12.0),sin(uTime*.41+vMapUV.y*11.0))*.012);
-   col=mix(base,tileSample(id2,uv2),a);
+   vec2 uvGrid2=grid;
+   if(id2==5.0)uvGrid2+=vec2(cos(uTime*.32+vMapUV.x*12.0),sin(uTime*.41+vMapUV.y*11.0))*.05;
+   col=mix(base,tileSample(id2,uvGrid2),a);
  }
 
  vec3 light=texture(uLight,vMapUV).rgb;
@@ -297,7 +307,7 @@ void main(){vec3 p=qr(iQ,aPos*iPS.w)+iPS.xyz,n=qr(iQ,aN);vec3 w=vec3((p.x-12750.
 `;
 const OBJ_FS=`#version 300 es
 precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uObjTex;out vec4 o;
-void main(){vec4 c=texture(uObjTex,vUV);if(c.a<.16)discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
+void main(){vec4 c=texture(uObjTex,vUV);if(c.a<.16||max(max(c.r,c.g),c.b)<.018)discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
 `;
 const objProg=program(OBJ_VS,OBJ_FS),objVP=gl.getUniformLocation(objProg,"uVP"),objSampler=gl.getUniformLocation(objProg,"uObjTex");
 async function buildLorenciaObjects(){
@@ -325,15 +335,17 @@ async function main(){
  if(!gl)return;
  statusEl.textContent="Cargando Terrain.map + 14 texturas originales…";
  const [hb,mb,lb,...tileBytes]=await Promise.all([
-   getBytes("TerrainHeight.OZB"),getBytes("Terrain.map"),getBytes("TerrainLight.OZJ"),...TILE_FILES.map(getBytes)
+   getBytes("TerrainHeight.OZB"),getBytes("EncTerrain1.map"),getBytes("TerrainLight.OZJ"),...TILE_FILES.map(getBytes)
  ]);
- const height=decodeHeightOZB(hb), mapping=parseTerrainMap(mb);
+ const height=decodeHeightOZB(hb), mapping=parseTerrainMap(muDecrypt(mb));
 
  statusEl.textContent="Armando atlas de texturas MU…";
- const atlas=document.createElement("canvas");atlas.width=1024;atlas.height=1024;const ax=atlas.getContext("2d");
+ const atlas=document.createElement("canvas");atlas.width=1024;atlas.height=1024;const ax=atlas.getContext("2d"),tileScales=new Float32Array(28);
  for(let i=0;i<tileBytes.length;i++){
    const tc=await ozjToCanvas(tileBytes[i],256);
    ax.drawImage(tc,(i%4)*256,Math.floor(i/4)*256);
+   tileScales[i*2]=64/Math.max(1,tc._srcW||256);
+   tileScales[i*2+1]=64/Math.max(1,tc._srcH||256);
  }
  const lightCanvas=await ozjToCanvas(lb,256);
 
@@ -363,6 +375,7 @@ async function main(){
  [["uAtlas",atlasTex],["uLayer1",l1Tex],["uLayer2",l2Tex],["uAlpha",alphaTex],["uLight",lightTex]].forEach(([n,t],i)=>{
    gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,t);gl.uniform1i(gl.getUniformLocation(prog,n),i);
  });
+ gl.uniform2fv(gl.getUniformLocation(prog,"uTileScale[0]"),tileScales);
  gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
  statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
  let objectScene={renders:[],instances:0,failed:0};
@@ -375,8 +388,8 @@ async function main(){
  }
  function frame(t){
    resize();
-   const cp=Math.cos(pitch),sp=Math.sin(pitch),eye=[Math.cos(yaw)*cp*dist,sp*dist+targetY,Math.sin(yaw)*cp*dist];
-   const vp=mul(perspective(.68,canvas.width/canvas.height,.1,1800),lookAt(eye,[0,targetY,0],[0,1,0]));
+   const cp=Math.cos(pitch),sp=Math.sin(pitch),eye=[targetX+Math.cos(yaw)*cp*dist,sp*dist+targetY,targetZ+Math.sin(yaw)*cp*dist];
+   const vp=mul(perspective(.68,canvas.width/canvas.height,.1,1800),lookAt(eye,[targetX,targetY,targetZ],[0,1,0]));
    gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,vp);gl.uniform1f(uTime,t/1000);
    gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
    gl.clearColor(.012,.015,.018,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
