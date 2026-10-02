@@ -4,7 +4,7 @@ on:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 concurrency:
@@ -17,10 +17,41 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with: {path: "."}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Import original World1 assets once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f "assets/World1/TerrainHeight.OZB" ] || [ ! -f "assets/World1/map1.OZJ" ]; then
+            echo "Importing original MU Season 6 World1 assets..."
+            mkdir -p /tmp/mu
+            curl --fail --location --retry 3 \
+              "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
+              -o /tmp/ClientS6.Base.rar
+            if command -v 7zz >/dev/null 2>&1; then Z7=7zz; elif command -v 7z >/dev/null 2>&1; then Z7=7z; else
+              sudo apt-get update
+              sudo apt-get install -y p7zip-full
+              Z7=7z
+            fi
+            "$Z7" x /tmp/ClientS6.Base.rar -o/tmp/mu "ClientS6 Base/Data/World1/*" -y
+            mkdir -p assets
+            rm -rf assets/World1
+            cp -R "/tmp/mu/ClientS6 Base/Data/World1" assets/World1
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add assets/World1
+            git commit -m "Import original MU Season 6 World1 assets" || true
+            git push origin HEAD:main
+          fi
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
