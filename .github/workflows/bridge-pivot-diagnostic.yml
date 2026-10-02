@@ -1,50 +1,51 @@
-name: Bridge Pivot Diagnostic
+name: Apply Bridge Pivot Fix
 on:
   push:
     branches: [main]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  diagnose:
+  fix:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect objects around Lorencia bridge
+      - name: Normalize Bridge01 local pivot
         shell: bash
         run: |
           python3 - <<'PY'
-          import struct, json
           from pathlib import Path
-          KEY=[0xD1,0x73,0x52,0xF6,0xD2,0x9A,0xCB,0x27,0x3E,0xAF,0x59,0x31,0x37,0xB3,0xE7,0xA2]
-          def dec(src):
-              out=bytearray(len(src)); mk=0x5E
-              for i,b in enumerate(src):
-                  out[i]=((b ^ KEY[i & 15]) - mk) & 255; mk=(b+0x3D)&255
-              return bytes(out)
-          def model(t):
-              p=lambda n:f'{n:02d}'
-              if 50<=t<=51:return 'FireLight'+p(t-49)
-              if t==52:return 'Bonfire01'
-              if t==55:return 'DoungeonGate01'
-              if t==80:return 'Bridge01'
-              if 81<=t<=84:return 'Fence'+p(t-80)
-              if t==85:return 'BridgeStone01'
-              if t==90:return 'StreetLight01'
-              if t==95:return 'Curtain01'
-              if 121<=t<=126:return 'HouseWall'+p(t-120)
-              if 127<=t<=129:return 'HouseEtc'+p(t-126)
-              if 130<=t<=132:return 'Light'+p(t-129)
-              if t==150:return 'Candle01'
-              return f'Type{t}'
-          b=dec(Path('assets/World1/EncTerrain1.obj').read_bytes()); ver=b[0]; header=struct.unpack_from('<h',b,2)[0]; sz={0:30,1:32,2:33,3:45,4:46,5:54}[ver]; count=min(header,(len(b)-4)//sz)
-          zones=[(125,145,142,165),(92,120,112,136),(153,120,173,136)]
-          out=[]; p=4
-          for i in range(count):
-              t=struct.unpack_from('<h',b,p)[0]; x,y,z=struct.unpack_from('<fff',b,p+2); ax,ay,az=struct.unpack_from('<fff',b,p+14); sc=struct.unpack_from('<f',b,p+26)[0]
-              tx,ty=x/100,y/100
-              if any(a<=tx<=c and bb<=ty<=d for a,bb,c,d in zones):
-                  out.append({'i':i,'type':t,'model':model(t),'tile':[round(tx,3),round(ty,3)],'z':round(z,2),'angle':[round(ax,1),round(ay,1),round(az,1)],'scale':round(sc,3)})
-              p+=sz
-          print('BRIDGE_NEARBY='+json.dumps(out,separators=(',',':')))
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old='''   const meshes=parseBmd(await getObjectBytes(model)),idata=new Float32Array(list.length*8);let q=0;'''
+          new='''   const meshes=parseBmd(await getObjectBytes(model)),idata=new Float32Array(list.length*8);let q=0;
+   // Bridge01 has a non-zero bind/root translation inside the BMD. The .obj positions
+   // are already the authored world anchors, so normalize only this model's local pivot
+   // before applying the original map position/rotation. Houses and every other Object1
+   // model keep the generic MU transform unchanged.
+   if(model.toLowerCase()==="bridge01.bmd"&&meshes.bones?.[0]?.p){
+     const bp=meshes.bones[0].p;
+     for(const bm of meshes){
+       for(let vi=0;vi<bm.data.length;vi+=8){
+         bm.data[vi]-=bp[0];bm.data[vi+1]-=bp[1];bm.data[vi+2]-=bp[2];
+       }
+     }
+   }'''
+          if s.count(old)!=1:
+              raise SystemExit(f'bridge anchor count={s.count(old)}')
+          s=s.replace(old,new)
+          old_status='''if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · blends MU + Bridge01 corregidos · PJ/cámara OK · ATT";'''
+          new_status='''if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · Bridge01 pivot normalizado · PJ/cámara OK · ATT";'''
+          if s.count(old_status)!=1:
+              raise SystemExit(f'status anchor count={s.count(old_status)}')
+          s=s.replace(old_status,new_status)
+          p.write_text(s,encoding='utf-8')
           PY
+          node - <<'NODE'
+          const fs=require('fs');const s=fs.readFileSync('index.html','utf8');const m=s.match(/<script>([\s\S]*?)<\/script>/);if(!m)throw new Error('script not found');new Function(m[1]);console.log('JavaScript syntax OK');
+          NODE
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Normalize Bridge01 local pivot to map anchors"
+          git push origin HEAD:main
