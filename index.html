@@ -394,9 +394,9 @@ async function buildLorenciaObjects(){
 async function buildPlayer(height){
  const models=["HelmClass01.bmd","ArmorClass01.bmd","PantClass01.bmd","GloveClass01.bmd","BootClass01.bmd"];
  // Dark Wizard base body in this client is Class01. These parts share the Player.bmd skeleton.
- // Player.bmd is the authoritative shared skeleton. PlayerStopMale is action 0, frame 0.
- // Class01 body parts resolve their local bone table to Player.bmd by bone name, matching LinkParentAnimation semantics.
- const parentModel=parseBmd(await getPlayerBytes("player.bmd"),null,0),parentSkeleton=parentModel.skeleton;
+ // Player.bmd is the authoritative shared skeleton. PlayerStopMale is action 1, frame 0.
+ // LinkParentAnimation in the original client uses the parent's BoneTransform array directly by bone index.
+ const parentModel=parseBmd(await getPlayerBytes("player.bmd"),null,1),parentBones=parentModel.bones;
  const spawnTileX=138,spawnTileY=124,spawnZ=(height.data[spawnTileY*256+spawnTileX]||0)*1.5+2;
  const facing=quatEuler([0,0,Math.PI*.25]);
  const idata=new Float32Array([spawnTileX*100,spawnTileY*100,spawnZ,.85,facing[0],facing[1],facing[2],facing[3]]);
@@ -418,7 +418,7 @@ async function buildPlayer(height){
    meshesLoaded++;
  }
  for(const model of models){
-   const meshes=parseBmd(await getPlayerBytes(model),parentSkeleton,0);
+   const meshes=parseBmd(await getPlayerBytes(model),parentBones,0);
    for(const m of meshes){
      if(!m.data.length||/shadow/i.test(m.texture))continue;
      const vao=gl.createVertexArray();gl.bindVertexArray(vao);
