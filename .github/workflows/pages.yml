@@ -121,6 +121,15 @@ jobs:
           for fn in files:
               out[fn]=parse(Path('assets/Player')/fn)
           Path('player-debug.json').write_text(json.dumps(out,indent=2),encoding='utf-8')
+          summary={}
+          for fn,d in out.items():
+              summary[fn]={
+                  'version':d['version'],'name':d['name'],'meshCount':d['meshCount'],
+                  'boneCount':d['boneCount'],'actionCount':d['actionCount'],
+                  'meshes':d['meshes'],'actions':d['actions'],
+                  'firstBones':d['bones'][:12]
+              }
+          print('PLAYER_DEBUG_SUMMARY='+json.dumps(summary,separators=(',',':')))
           PY
       - name: Setup Pages
         uses: actions/configure-pages@v5
