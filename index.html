@@ -515,7 +515,9 @@ async function buildLorenciaObjects(){
 }
 const LORENCIA_NPCS=[
  {id:251,name:"Hanzo the Blacksmith",x:118,y:113,dir:3,model:"Smith01.bmd"},
- {id:254,name:"Pasi the Mage",x:116,y:141,dir:3,model:"Wizard01.bmd"}
+ {id:254,name:"Pasi the Mage",x:116,y:141,dir:3,model:"Wizard01.bmd"},
+ {id:253,name:"Amy the Potion Girl",x:127,y:86,dir:3,skeleton:"Girl01.bmd",parts:["GirlHead01.bmd","GirlUpper01.bmd","GirlLower01.bmd"]},
+ {id:255,name:"Lumen the Barmaid",x:123,y:135,dir:3,skeleton:"Female01.bmd",parts:["FemaleHead02.bmd","FemaleUpper02.bmd","FemaleLower02.bmd","FemaleBoots02.bmd"]}
 ];
 function npcDirectionQuat(dir){
  const mapAngle=Math.PI-(dir&7)*Math.PI*.25;
@@ -525,10 +527,21 @@ async function buildLorenciaNPCs(height){
  const renders=[],npcs=[],failed=[];
  for(const spec of LORENCIA_NPCS){
   try{
-   const meshes=parseBmd(await getNpcBytes(spec.model),null,0);
+   let meshes=[];
+   if(spec.parts){
+     // Original client LinkParentAnimation behavior: the female merchant body parts
+     // use the animation/skeleton from Girl01/Female01 and are skinned by bone name.
+     const base=parseBmd(await getNpcBytes(spec.skeleton),null,0),shared=base.skeleton;
+     for(const part of spec.parts){
+       const pm=parseBmd(await getNpcBytes(part),shared,0);
+       meshes.push(...pm);
+     }
+   }else{
+     meshes=parseBmd(await getNpcBytes(spec.model),null,0);
+   }
    const tx=Math.max(0,Math.min(255,spec.x)),ty=Math.max(0,Math.min(255,spec.y));
    const z=(height.data[ty*256+tx]||0)*1.5+2;
-   const q=npcDirectionQuat(spec.dir),idata=new Float32Array([spec.x*100,spec.y*100,z,1,q[0],q[1],q[2],q[3]]);
+   const q=npcDirectionQuat(spec.dir),scale=spec.scale||1,idata=new Float32Array([spec.x*100,spec.y*100,z,scale,q[0],q[1],q[2],q[3]]);
    const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.STATIC_DRAW);
    for(const m of meshes){
     if(!m.data.length||/shadow/i.test(m.texture))continue;
