@@ -570,7 +570,7 @@ async function main(){
  statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
  let objectScene={renders:[],instances:0,failed:0},playerScene={renders:[],parts:0,meshes:0,tile:[138,124]},objectsReady=false,playerReady=false;
  const refreshStatus=()=>{
-   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · PJ 360° · idle/walk/run BMD · ATT/colisiones";
+   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · PJ 360° · cámara MU/facing corregidos · ATT";
    else if(objectsReady)statusEl.textContent="Lorencia lista · cargando personaje original…";
    else if(playerReady)statusEl.textContent="Dark Wizard original listo · cargando objetos de Lorencia…";
  };
@@ -578,7 +578,8 @@ async function main(){
  buildPlayer(height).then(x=>{playerScene=x;playerReady=true;resetCameraToPlayer();refreshStatus();}).catch(e=>{console.warn("Player",e);statusEl.textContent="Lorencia lista · error cargando personaje";});
 
  let targetX=26.25,targetY=2.8,targetZ=-8.75;
- const MU_CAM_YAW=2.36,MU_CAM_PITCH=.66,MU_CAM_DIST=20.5;
+ // MU client defaults converted to our WebGL axes: yaw ≈ -48°, pitch ≈ 44°.
+ const MU_CAM_YAW=-.838,MU_CAM_PITCH=.771,MU_CAM_DIST=20.5;
  let playerCamYaw=MU_CAM_YAW,playerCamPitch=MU_CAM_PITCH,playerCamDist=MU_CAM_DIST;
  const startCp=Math.cos(playerCamPitch);
  let camX=targetX+Math.cos(playerCamYaw)*startCp*playerCamDist;
@@ -665,7 +666,8 @@ async function main(){
    if(flags&(ATT_NOMOVE|ATT_NOGROUND))return;
    playerScene.moveAmount=amount;
    playerScene.tilePos[0]=nx;playerScene.tilePos[1]=ny;
-   const a=Math.atan2(dy,dx),q=quatEuler([0,0,a]),data=playerScene.instanceData;
+   // MU visual facing is rotated +90° from the raw map movement vector.
+   const a=Math.atan2(dy,dx)+Math.PI*.5,q=quatEuler([0,0,a]),data=playerScene.instanceData;
    data[0]=nx*100;data[1]=ny*100;data[2]=terrainHeightAt(nx,ny);data[3]=.85;
    data[4]=q[0];data[5]=q[1];data[6]=q[2];data[7]=q[3];
    gl.bindBuffer(gl.ARRAY_BUFFER,playerScene.instanceBuffer);
