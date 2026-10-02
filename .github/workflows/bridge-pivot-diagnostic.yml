@@ -35,6 +35,10 @@ jobs:
               return (vx+w*tx+(y*tz-z*ty),vy+w*ty+(z*tx-x*tz),vz+w*tz+(x*ty-y*tx))
           def qmul(a,b):
               return (a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2])
+          def bounds(a):
+              if not a:return None
+              lo=[min(x[i] for x in a) for i in range(3)]; hi=[max(x[i] for x in a) for i in range(3)]
+              return {'min':lo,'max':hi,'center':[(lo[i]+hi[i])/2 for i in range(3)],'size':[hi[i]-lo[i] for i in range(3)]}
           def bmd(path):
               raw=Path(path).read_bytes(); ver=raw[3]
               if raw[:3]!=b'BMD': raise RuntimeError('bad bmd')
@@ -89,25 +93,19 @@ jobs:
                           q,pp=wb[node]; r=qrot(q,v); sv=(r[0]+pp[0],r[1]+pp[1],r[2]+pp[2])
                       else: sv=v
                       skinpts.append(sv); ms.append(sv)
-                  def bounds(a):
-                      if not a:return None
-                      lo=[min(x[i] for x in a) for i in range(3)]; hi=[max(x[i] for x in a) for i in range(3)]
-                      return {'min':lo,'max':hi,'center':[(lo[i]+hi[i])/2 for i in range(3)],'size':[hi[i]-lo[i] for i in range(3)]}
                   per.append({'mesh':m['index'],'texture':m['texture'],'raw':bounds(mr),'skinned':bounds(ms)})
-              def bounds(a):
-                  lo=[min(x[i] for x in a) for i in range(3)]; hi=[max(x[i] for x in a) for i in range(3)]
-                  return {'min':lo,'max':hi,'center':[(lo[i]+hi[i])/2 for i in range(3)],'size':[hi[i]-lo[i] for i in range(3)]}
               return {'name':name,'version':ver,'meshCount':mc,'boneCount':bc,'actionCount':ac,'bone0':bones[0] if bones else None,'worldBone0':wb[0][1] if wb else None,'rawBounds':bounds(rawpts),'skinnedBounds':bounds(skinpts),'meshes':per}
 
           def obj(path):
-              b=dec(Path(path).read_bytes()); ver=b[0]; count=struct.unpack_from('<h',b,2)[0]; sizes={0:30,1:32,2:33,3:45,4:46,5:54}; sz=sizes[ver]
+              b=dec(Path(path).read_bytes()); ver=b[0]; header=struct.unpack_from('<h',b,2)[0]; sizes={0:30,1:32,2:33,3:45,4:46,5:54}; sz=sizes[ver]
+              count=min(max(header,0),(len(b)-4)//sz)
               out=[]; p=4
               for i in range(count):
                   typ=struct.unpack_from('<h',b,p)[0]
                   pos=struct.unpack_from('<fff',b,p+2); ang=struct.unpack_from('<fff',b,p+14); scale=struct.unpack_from('<f',b,p+26)[0]
                   if typ in (80,85): out.append({'i':i,'type':typ,'pos':pos,'tile':(pos[0]/100,pos[1]/100),'angle':ang,'scale':scale})
                   p+=sz
-              return {'version':ver,'count':count,'bridges':out}
+              return {'version':ver,'header':header,'count':count,'len':len(b),'bridges':out}
 
           result={
             'bridge01':bmd('assets/Object1/Bridge01.bmd'),
