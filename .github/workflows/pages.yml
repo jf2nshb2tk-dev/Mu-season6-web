@@ -57,101 +57,72 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add assets/World1 assets/Object1 assets/Player 2>/dev/null || true
-            git commit -m "Import original Lorencia Object1 assets" || true
+            git commit -m "Import original MU Lorencia assets" || true
             git push origin HEAD:main
           fi
-      - name: Apply original MU TerrainHeight row order
+      - name: Apply exact original MU terrain layout
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          old=''' const h=Math.abs(hs), stride=Math.floor((w*bpp+31)/32)*4, out=new Uint8Array(w*h), bottomUp=hs>0;\n for(let y=0;y<h;y++){const sy=bottomUp?(h-1-y):y;out.set(bytes.subarray(off+px+sy*stride,off+px+sy*stride+w),y*w)}'''
-          new=''' const h=Math.abs(hs), stride=Math.floor((w*bpp+31)/32)*4, out=new Uint8Array(w*h);\n // MU does NOT reinterpret TerrainHeight.OZB as a display image. The original\n // client seeks to the 8-bit BMP pixel payload and reads the 65536 height bytes\n // sequentially into TerrainHeight, so keep the file row order exactly as stored.\n for(let y=0;y<h;y++){const sy=y;out.set(bytes.subarray(off+px+sy*stride,off+px+sy*stride+w),y*w)}'''
-          if old in s:
-              s=s.replace(old,new,1)
-          elif 'MU does NOT reinterpret TerrainHeight.OZB as a display image.' not in s:
-              raise SystemExit('TerrainHeight row-order anchor not found')
+
+          # OpenTerrainHeight in the original client skips the 4-byte OZB wrapper,
+          # reads a 66616-byte block, then takes height bytes from Buffer+1080.
+          # The embedded BMP advertises pixelOffset=1078, but MU intentionally uses
+          # 1080. Respecting the BMP offset shifts the complete height grid by 2 cells.
+          start=s.index('function decodeHeightOZB(bytes){')
+          end=s.index('\n}',start)+2
+          decoder='''function decodeHeightOZB(bytes){
+ const off=findSeq(bytes,[0x42,0x4d]);
+ if(off<0) throw new Error("TerrainHeight.OZB: BMP interno no encontrado");
+ const dv=new DataView(bytes.buffer,bytes.byteOffset+off,bytes.byteLength-off);
+ const w=dv.getInt32(18,true),hs=dv.getInt32(22,true),bpp=dv.getUint16(28,true),comp=dv.getUint32(30,true);
+ if(w!==256||Math.abs(hs)!==256||bpp!==8||comp!==0) throw new Error("TerrainHeight.OZB no soportado");
+ const h=256,stride=256,out=new Uint8Array(256*256),muPixelStart=off+1080;
+ // Exact MU OpenTerrainHeight: raw file-row order, pixels begin at Buffer+1080.
+ for(let y=0;y<h;y++)out.set(bytes.subarray(muPixelStart+y*stride,muPixelStart+y*stride+w),y*w);
+ return {w,h,data:out};
+}'''
+          s=s[:start]+decoder+s[end:]
+
+          # Original terrain draw is GL_TRIANGLE_FAN with corners TL,TR,BR,BL,
+          # therefore WebGL triangles are TL-TR-BR and TL-BR-BL.
+          s=s.replace('inds[k++]=a;inds[k++]=c;inds[k++]=b;inds[k++]=b;inds[k++]=c;inds[k++]=d;',
+                      'inds[k++]=a;inds[k++]=d;inds[k++]=b;inds[k++]=a;inds[k++]=c;inds[k++]=d;',1)
+
+          # Original RequestTerrainHeight is bilinear, not triangle interpolation.
+          hs0=s.index(' const terrainHeightAt=(tx,ty)=>{')
+          hs1=s.index('\n };',hs0)+4
+          heightfn=''' const terrainHeightAt=(tx,ty)=>{
+   const x=Math.max(0,Math.min(254.999999,tx)),y=Math.max(0,Math.min(254.999999,ty));
+   const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;
+   const h00=(height.data[iy*256+ix]||0)*1.5;
+   const h10=(height.data[iy*256+ix+1]||0)*1.5;
+   const h01=(height.data[(iy+1)*256+ix]||0)*1.5;
+   const h11=(height.data[(iy+1)*256+ix+1]||0)*1.5;
+   const top=h00+(h10-h00)*fx,bottom=h01+(h11-h01)*fx;
+   return top+(bottom-top)*fy+2;
+ };'''
+          s=s[:hs0]+heightfn+s[hs1:]
           p.write_text(s,encoding='utf-8')
-          print('TerrainHeight uses original MU raw BMP row order')
           PY
-      - name: Apply Bridge01 pivot correction
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('index.html')
-          s=p.read_text(encoding='utf-8')
-          marker='Bridge01: EncTerrain1.obj already contains the authored world anchors.'
-          if marker not in s:
-              old='   const meshes=parseBmd(await getObjectBytes(model)),idata=new Float32Array(list.length*8);let q=0;'
-              new='\n'.join([
-                  '   const meshes=parseBmd(await getObjectBytes(model)),idata=new Float32Array(list.length*8);let q=0;',
-                  '   // Bridge01: EncTerrain1.obj already contains the authored world anchors.',
-                  '   // Cancel the non-zero bind/root translation inside Bridge01.bmd so its',
-                  '   // visible geometry rotates around the map anchor instead of an offset pivot.',
-                  '   if(model.toLowerCase()==="bridge01.bmd"&&meshes.bones?.[0]?.p){',
-                  '     const bp=meshes.bones[0].p;',
-                  '     for(const bm of meshes){',
-                  '       for(let vi=0;vi<bm.data.length;vi+=8){',
-                  '         bm.data[vi]-=bp[0];',
-                  '         bm.data[vi+1]-=bp[1];',
-                  '         bm.data[vi+2]-=bp[2];',
-                  '       }',
-                  '     }',
-                  '   }',
-              ])
-              if s.count(old)!=1:
-                  raise SystemExit(f'Bridge01 patch anchor count={s.count(old)}')
-              s=s.replace(old,new)
-              old_status='if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · blends MU + Bridge01 corregidos · PJ/cámara OK · ATT";'
-              new_status='if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · Bridge01 pivot normalizado · PJ/cámara OK · ATT";'
-              if s.count(old_status)==1:
-                  s=s.replace(old_status,new_status)
-              p.write_text(s,encoding='utf-8')
-              print('Bridge01 local pivot normalized for deployment')
-          else:
-              print('Bridge01 pivot correction already present')
-          PY
-      - name: Apply original MU terrain triangulation
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('index.html')
-          s=p.read_text(encoding='utf-8')
-
-          # Original MU renders each terrain tile as a triangle fan ordered
-          # TL -> TR -> BR -> BL, i.e. the diagonal is TL -> BR.
-          old_idx='inds[k++]=a;inds[k++]=c;inds[k++]=b;inds[k++]=b;inds[k++]=c;inds[k++]=d;'
-          new_idx='inds[k++]=a;inds[k++]=d;inds[k++]=b;inds[k++]=a;inds[k++]=c;inds[k++]=d;'
-          if old_idx in s:
-              s=s.replace(old_idx,new_idx,1)
-          elif new_idx not in s:
-              raise SystemExit('terrain index anchor not found')
-
-          old_h=''' const terrainHeightAt=(tx,ty)=>{\n   const x=Math.max(0,Math.min(255,Math.round(tx))),y=Math.max(0,Math.min(255,Math.round(ty)));\n   return (height.data[y*256+x]||0)*1.5+2;\n };'''
-          new_h=''' const terrainHeightAt=(tx,ty)=>{\n   const x=Math.max(0,Math.min(254.999999,tx)),y=Math.max(0,Math.min(254.999999,ty));\n   const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;\n   const h00=(height.data[iy*256+ix]||0)*1.5;\n   const h10=(height.data[iy*256+ix+1]||0)*1.5;\n   const h01=(height.data[(iy+1)*256+ix]||0)*1.5;\n   const h11=(height.data[(iy+1)*256+ix+1]||0)*1.5;\n   // Same TL->BR split used by the original MU terrain triangle fan.\n   const h=fy<=fx\n     ? h00+fx*(h10-h00)+fy*(h11-h10)\n     : h00+fx*(h11-h01)+fy*(h01-h00);\n   return h+2;\n };'''
-          if old_h in s:
-              s=s.replace(old_h,new_h,1)
-          elif 'Same TL->BR split used by the original MU terrain triangle fan.' not in s:
-              raise SystemExit('terrainHeightAt anchor not found')
-
-          p.write_text(s,encoding='utf-8')
-          print('Terrain diagonal corrected to original MU TL->BR split')
-          PY
-      - name: Validate JavaScript
-        shell: bash
-        run: |
           node - <<'NODE'
           const fs=require('fs');
           const s=fs.readFileSync('index.html','utf8');
           const m=s.match(/<script>([\s\S]*?)<\/script>/);
-          if(!m)throw new Error('script not found');
+          if(!m) throw new Error('script not found');
           new Function(m[1]);
           console.log('JavaScript syntax OK');
           NODE
+          if ! git diff --quiet -- index.html; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add index.html
+            git commit -m "Match original MU TerrainHeight 1080-byte layout"
+            git push origin HEAD:main
+          fi
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload site
