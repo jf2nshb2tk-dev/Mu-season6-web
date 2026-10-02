@@ -60,6 +60,42 @@ jobs:
             git commit -m "Import original Lorencia Object1 assets" || true
             git push origin HEAD:main
           fi
+      - name: Apply Bridge01 pivot correction
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          marker='Bridge01: EncTerrain1.obj already contains the authored world anchors.'
+          if marker not in s:
+              old='   const meshes=parseBmd(await getObjectBytes(model)),idata=new Float32Array(list.length*8);let q=0;'
+              new='''   const meshes=parseBmd(await getObjectBytes(model)),idata=new Float32Array(list.length*8);let q=0;
+   // Bridge01: EncTerrain1.obj already contains the authored world anchors.
+   // Cancel the non-zero bind/root translation inside Bridge01.bmd so its
+   // visible geometry rotates around the map anchor instead of an offset pivot.
+   if(model.toLowerCase()==="bridge01.bmd"&&meshes.bones?.[0]?.p){
+     const bp=meshes.bones[0].p;
+     for(const bm of meshes){
+       for(let vi=0;vi<bm.data.length;vi+=8){
+         bm.data[vi]-=bp[0];
+         bm.data[vi+1]-=bp[1];
+         bm.data[vi+2]-=bp[2];
+       }
+     }
+   }'''
+              if s.count(old)!=1:
+                  raise SystemExit(f'Bridge01 patch anchor count={s.count(old)}')
+              s=s.replace(old,new)
+              old_status='if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · blends MU + Bridge01 corregidos · PJ/cámara OK · ATT";'
+              new_status='if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · Bridge01 pivot normalizado · PJ/cámara OK · ATT";'
+              if s.count(old_status)==1:
+                  s=s.replace(old_status,new_status)
+              p.write_text(s,encoding='utf-8')
+              print('Bridge01 local pivot normalized for deployment')
+          else:
+              print('Bridge01 pivot correction already present')
+          PY
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload site
