@@ -13,13 +13,15 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 #fps{color:#b8c9a2}
 #hint{position:fixed;z-index:4;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));padding:7px 9px;background:#000b;border:1px solid #444;border-radius:7px;color:#bbb;font-size:11px;pointer-events:none}
 #error{display:none;position:fixed;inset:0;background:#050505;color:#fff;padding:24px;z-index:10;white-space:pre-wrap;overflow:auto}
+#rotate{display:none;position:fixed;inset:0;z-index:20;background:#050505;color:#e2c577;align-items:center;justify-content:center;text-align:center;padding:28px;font-size:20px;font-weight:700}
+@media (orientation:portrait){#rotate{display:flex}#gl,#hud,#hint{visibility:hidden}}
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <div id="hud"><b>MU Season 6 Web · World1 / Lorencia</b><br><span id="status">Cargando terreno original…</span><br><span id="fps"></span></div>
 <div id="hint">Arrastrá: cámara · Pellizco: zoom</div>
-<div id="error"></div>
+<div id="error"></div><div id="rotate">Gir&aacute; el iPhone<br>MU Season 6 Web se juega en horizontal</div>
 <script>
 const $=s=>document.querySelector(s);
 const canvas=$("#gl"), statusEl=$("#status"), fpsEl=$("#fps"), errorEl=$("#error");
@@ -249,7 +251,7 @@ function parseMuObj(raw){
  }
  return{groups,total,ver,map};
 }
-function parseBmd(raw){
+function parseBmd(raw,externalWB=null,poseAction=0){
  let b=raw,ver=b[3];if(fixedStr(b,0,3)!=="BMD")throw new Error("BMD inválido");
  if(ver===12){const d0=new DataView(b.buffer,b.byteOffset,b.byteLength),size=d0.getInt32(4,true),dec=muDecrypt(b.slice(8,8+size)),nb=new Uint8Array(4+dec.length);nb.set(b.slice(0,4));nb.set(dec,4);b=nb}
  else if(ver===15)throw new Error("BMD v15 todavía no soportado");
@@ -267,17 +269,18 @@ function parseBmd(raw){
  for(let i=0;i<bc;i++){
   const dummy=b[p++]!==0;if(dummy){bones.push({dummy:true,parent:-1,pos:[0,0,0],rot:[0,0,0]});continue}
   p+=32;const parent=d.getInt16(p,true);p+=2;let pos=[0,0,0],rot=[0,0,0];
-  for(let a=0;a<ac;a++){const nk=acts[a].nk,ps=p;if(a===0&&nk)pos=[d.getFloat32(ps,true),d.getFloat32(ps+4,true),d.getFloat32(ps+8,true)];p+=nk*12;const rs=p;if(a===0&&nk)rot=[d.getFloat32(rs,true),d.getFloat32(rs+4,true),d.getFloat32(rs+8,true)];p+=nk*12}
+  for(let a=0;a<ac;a++){const nk=acts[a].nk,ps=p;if(a===poseAction&&nk)pos=[d.getFloat32(ps,true),d.getFloat32(ps+4,true),d.getFloat32(ps+8,true)];p+=nk*12;const rs=p;if(a===poseAction&&nk)rot=[d.getFloat32(rs,true),d.getFloat32(rs+4,true),d.getFloat32(rs+8,true)];p+=nk*12}
   bones.push({dummy:false,parent,pos,rot});
  }
  const wb=[];
  for(let i=0;i<bones.length;i++){const x=bones[i];if(x.dummy){wb.push({q:[0,0,0,1],p:[0,0,0]});continue}const lq=quatEuler(x.rot);if(x.parent>=0&&x.parent<wb.length){const pa=wb[x.parent],qr=quatMul(pa.q,lq),rp=quatRot(pa.q,x.pos),ll=Math.hypot(...qr)||1;wb.push({q:qr.map(v=>v/ll),p:[rp[0]+pa.p[0],rp[1]+pa.p[1],rp[2]+pa.p[2]]})}else wb.push({q:lq,p:x.pos})}
- const meshes=[];
+ const skinWB=externalWB||wb,meshes=[];
  for(const m of rawMeshes){
-  const a=[];const emit=k=>{const v=m.vv[k.vi],n=m.nnv[k.ni],uv=m.uv[k.ti]||[0,0];if(!v)return;const bv=wb[v.node]||{q:[0,0,0,1],p:[0,0,0]},r=quatRot(bv.q,v.v),pp=[r[0]+bv.p[0],r[1]+bv.p[1],r[2]+bv.p[2]],bn=n?(wb[n.node]||bv):bv,nr=n?quatRot(bn.q,n.v):[0,0,1],nl=Math.hypot(...nr)||1;a.push(pp[0],pp[1],pp[2],nr[0]/nl,nr[1]/nl,nr[2]/nl,uv[0],uv[1])};
+  const a=[];const emit=k=>{const v=m.vv[k.vi],n=m.nnv[k.ni],uv=m.uv[k.ti]||[0,0];if(!v)return;const bv=skinWB[v.node]||{q:[0,0,0,1],p:[0,0,0]},r=quatRot(bv.q,v.v),pp=[r[0]+bv.p[0],r[1]+bv.p[1],r[2]+bv.p[2]],bn=n?(skinWB[n.node]||bv):bv,nr=n?quatRot(bn.q,n.v):[0,0,1],nl=Math.hypot(...nr)||1;a.push(pp[0],pp[1],pp[2],nr[0]/nl,nr[1]/nl,nr[2]/nl,uv[0],uv[1])};
   for(const t of m.tr){const n=Math.min(Math.max(t.poly,0),4);if(n<3)continue;const q=[];for(let k=0;k<n;k++)q.push({vi:t.vi[k],ni:t.ni[k],ti:t.ti[k]});emit(q[0]);emit(q[1]);emit(q[2]);if(n===4){emit(q[0]);emit(q[2]);emit(q[3])}}
   meshes.push({data:new Float32Array(a),texture:m.texture});
  }
+ meshes.bones=wb;
  return meshes;
 }
 async function objectOzj(bytes){
@@ -354,13 +357,16 @@ async function buildLorenciaObjects(){
 }
 async function buildPlayer(height){
  const models=["HelmClass01.bmd","ArmorClass01.bmd","PantClass01.bmd","GloveClass01.bmd","BootClass01.bmd"];
+ // The equipment BMDs are linked to Player.bmd in the original client.
+ // Use PlayerStopMale (action 1), frame 0 as the shared skeleton so body parts don't explode apart.
+ const parentModel=parseBmd(await getPlayerBytes("player.bmd"),null,1),parentBones=parentModel.bones;
  const spawnTileX=138,spawnTileY=124,spawnZ=(height.data[spawnTileY*256+spawnTileX]||0)*1.5+2;
  const facing=quatEuler([0,0,Math.PI*.25]);
  const idata=new Float32Array([spawnTileX*100,spawnTileY*100,spawnZ,.85,facing[0],facing[1],facing[2],facing[3]]);
  const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.STATIC_DRAW);
  const renders=[];let meshesLoaded=0;
  for(const model of models){
-   const meshes=parseBmd(await getPlayerBytes(model));
+   const meshes=parseBmd(await getPlayerBytes(model),parentBones,0);
    for(const m of meshes){
      if(!m.data.length||/shadow/i.test(m.texture))continue;
      const vao=gl.createVertexArray();gl.bindVertexArray(vao);
@@ -434,7 +440,7 @@ async function main(){
  buildLorenciaObjects().then(x=>{objectScene=x;objectsReady=true;refreshStatus();}).catch(e=>{console.warn(e);statusEl.textContent="Terreno listo · error cargando objetos";});
  buildPlayer(height).then(x=>{playerScene=x;playerReady=true;refreshStatus();}).catch(e=>{console.warn("Player",e);statusEl.textContent="Lorencia lista · error cargando personaje";});
 
- let yaw=-.72,pitch=.58,dist=105,targetX=26.25,targetY=5,targetZ=-8.75,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
+ let yaw=-.74,pitch=.40,dist=58,targetX=26.25,targetY=4.0,targetZ=-8.75,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
  function resize(){
    const d=Math.min(devicePixelRatio||1,1.45),w=Math.max(1,Math.floor(innerWidth*d)),h=Math.max(1,Math.floor(innerHeight*d));
    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}
@@ -442,7 +448,7 @@ async function main(){
  function frame(t){
    resize();
    const cp=Math.cos(pitch),sp=Math.sin(pitch),eye=[targetX+Math.cos(yaw)*cp*dist,sp*dist+targetY,targetZ+Math.sin(yaw)*cp*dist];
-   const vp=mul(perspective(.68,canvas.width/canvas.height,.1,1800),lookAt(eye,[targetX,targetY,targetZ],[0,1,0]));
+   const vp=mul(perspective(.72,canvas.width/canvas.height,.1,1800),lookAt(eye,[targetX,targetY,targetZ],[0,1,0]));
    gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,vp);gl.uniform1f(uTime,t/1000);
    // Object rendering uses texture unit 0. Rebind every terrain texture each frame
    // so the terrain does not start sampling the last loaded Object1 texture.
