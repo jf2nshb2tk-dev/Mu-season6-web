@@ -183,7 +183,7 @@ function byteTex(data,linear=false){
 }
 function canvasTex(c){
  const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
- gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.generateMipmap(gl.TEXTURE_2D);
@@ -307,7 +307,7 @@ void main(){vec3 p=qr(iQ,aPos*iPS.w)+iPS.xyz,n=qr(iQ,aN);vec3 w=vec3((p.x-12750.
 `;
 const OBJ_FS=`#version 300 es
 precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uObjTex;out vec4 o;
-void main(){vec4 c=texture(uObjTex,vUV);if(c.a<.16||max(max(c.r,c.g),c.b)<.018)discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
+void main(){vec4 c=texture(uObjTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.16||(mx<.075&&mx-mn<.035))discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
 `;
 const objProg=program(OBJ_VS,OBJ_FS),objVP=gl.getUniformLocation(objProg,"uVP"),objSampler=gl.getUniformLocation(objProg,"uObjTex");
 async function buildLorenciaObjects(){
@@ -406,7 +406,7 @@ async function main(){
      gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
    }
 
-   frames++;if(t-lastT>750){fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos MU · Terrain.map real";frames=0;lastT=t}
+   frames++;if(t-lastT>750){fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos MU · EncTerrain1.map real";frames=0;lastT=t}
    requestAnimationFrame(frame);
  }
  canvas.addEventListener("pointerdown",e=>{drag=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId)});
