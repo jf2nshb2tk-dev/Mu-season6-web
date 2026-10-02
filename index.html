@@ -295,6 +295,12 @@ function repeatTex(c){
  const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);gl.generateMipmap(gl.TEXTURE_2D);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);return t;
 }
+function playerRepeatTex(c){
+ // MU's Player BMD UVs come from the original DirectX client (V=0 at the top).
+ // Keep the decoded canvas orientation as-is; flipping here vertically mirrored the skin atlas.
+ const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);gl.generateMipmap(gl.TEXTURE_2D);return t;
+}
 function applyLegacyBlackKey(c){
  const x=c.getContext("2d"),im=x.getImageData(0,0,c.width,c.height),d=im.data;
  for(let i=0;i<d.length;i+=4){
@@ -320,7 +326,7 @@ const playerTexCache=new Map();
 async function playerTexture(path){
  const f=path.split(String.fromCharCode(92)).join("/").split("/").pop(),dot=f.lastIndexOf("."),base=dot<0?f:f.slice(0,dot),ext=(dot<0?"":f.slice(dot+1)).toLowerCase(),asset=base+(ext==="tga"?".OZT":".OZJ"),key=asset.toLowerCase();
  if(playerTexCache.has(key))return playerTexCache.get(key);
- const promise=(async()=>{try{const bytes=await getPlayerBytes(asset),cv=asset.toLowerCase().endsWith(".ozt")?objectOzt(bytes):await objectOzj(bytes);return repeatTex(cv)}catch(e){console.warn("Player texture",asset,e);const cv=document.createElement("canvas");cv.width=cv.height=2;const x=cv.getContext("2d");x.fillStyle="#c6a77c";x.fillRect(0,0,2,2);return repeatTex(cv)}})();
+ const promise=(async()=>{try{const bytes=await getPlayerBytes(asset),cv=asset.toLowerCase().endsWith(".ozt")?objectOzt(bytes):await objectOzj(bytes);return playerRepeatTex(cv)}catch(e){console.warn("Player texture",asset,e);const cv=document.createElement("canvas");cv.width=cv.height=2;const x=cv.getContext("2d");x.fillStyle="#c6a77c";x.fillRect(0,0,2,2);return playerRepeatTex(cv)}})();
  playerTexCache.set(key,promise);return promise;
 }
 const OBJ_VS=`#version 300 es
