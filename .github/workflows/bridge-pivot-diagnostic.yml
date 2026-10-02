@@ -10,108 +10,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Diagnose Bridge01 pivot and map placement
+      - name: Inspect objects around Lorencia bridge
         shell: bash
         run: |
           python3 - <<'PY'
-          import struct, json, math
+          import struct, json
           from pathlib import Path
-
           KEY=[0xD1,0x73,0x52,0xF6,0xD2,0x9A,0xCB,0x27,0x3E,0xAF,0x59,0x31,0x37,0xB3,0xE7,0xA2]
           def dec(src):
               out=bytearray(len(src)); mk=0x5E
               for i,b in enumerate(src):
-                  out[i]=((b ^ KEY[i & 15]) - mk) & 255
-                  mk=(b+0x3D)&255
+                  out[i]=((b ^ KEY[i & 15]) - mk) & 255; mk=(b+0x3D)&255
               return bytes(out)
-          def s32(b,o): return b[o:o+32].split(b'\0',1)[0].decode('latin1','replace')
-          def quat(e):
-              x,y,z=e; hx=x*.5; hy=y*.5; hz=z*.5
-              sx,cx=math.sin(hx),math.cos(hx); sy,cy=math.sin(hy),math.cos(hy); sz,cz=math.sin(hz),math.cos(hz)
-              return (sx*cy*cz-cx*sy*sz,cx*sy*cz+sx*cy*sz,cx*cy*sz-sx*sy*cz,cx*cy*cz+sx*sy*sz)
-          def qrot(q,v):
-              x,y,z,w=q; vx,vy,vz=v
-              tx=2*(y*vz-z*vy); ty=2*(z*vx-x*vz); tz=2*(x*vy-y*vx)
-              return (vx+w*tx+(y*tz-z*ty),vy+w*ty+(z*tx-x*tz),vz+w*tz+(x*ty-y*tx))
-          def qmul(a,b):
-              return (a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2])
-          def bounds(a):
-              if not a:return None
-              lo=[min(x[i] for x in a) for i in range(3)]; hi=[max(x[i] for x in a) for i in range(3)]
-              return {'min':lo,'max':hi,'center':[(lo[i]+hi[i])/2 for i in range(3)],'size':[hi[i]-lo[i] for i in range(3)]}
-          def bmd(path):
-              raw=Path(path).read_bytes(); ver=raw[3]
-              if raw[:3]!=b'BMD': raise RuntimeError('bad bmd')
-              if ver==12:
-                  n=struct.unpack_from('<i',raw,4)[0]; raw=raw[:4]+dec(raw[8:8+n])
-              p=4; name=s32(raw,p); p+=32
-              mc,bc,ac=struct.unpack_from('<HHH',raw,p); p+=6
-              meshes=[]
-              for mi in range(mc):
-                  nv,nn,nt,ntr,texidx=struct.unpack_from('<hhhhh',raw,p); p+=10
-                  vv=[]
-                  for _ in range(nv):
-                      node=struct.unpack_from('<h',raw,p)[0]
-                      v=struct.unpack_from('<fff',raw,p+4); vv.append((node,v)); p+=16
-                  p+=nn*20+nt*8+ntr*64
-                  texture=s32(raw,p); p+=32
-                  meshes.append({'index':mi,'texture':texture,'vv':vv})
-              acts=[]
-              for ai in range(ac):
-                  nk=struct.unpack_from('<h',raw,p)[0]; p+=2
-                  lock=raw[p]!=0; p+=1
-                  if lock: p+=nk*12
-                  acts.append({'nk':nk,'lock':lock})
-              bones=[]
-              for bi in range(bc):
-                  dummy=raw[p]!=0; p+=1
-                  if dummy:
-                      bones.append({'dummy':True,'parent':-1,'pos':(0,0,0),'rot':(0,0,0)}); continue
-                  bn=s32(raw,p); p+=32; parent=struct.unpack_from('<h',raw,p)[0]; p+=2
-                  pos=(0,0,0); rot=(0,0,0)
-                  for ai,a in enumerate(acts):
-                      nk=a['nk']; ps=p
-                      if ai==0 and nk: pos=struct.unpack_from('<fff',raw,ps)
-                      p+=nk*12; rs=p
-                      if ai==0 and nk: rot=struct.unpack_from('<fff',raw,rs)
-                      p+=nk*12
-                  bones.append({'dummy':False,'name':bn,'parent':parent,'pos':pos,'rot':rot})
-              wb=[]
-              for bone in bones:
-                  if bone['dummy']:
-                      wb.append(((0,0,0,1),(0,0,0))); continue
-                  lq=quat(bone['rot']); lp=bone['pos']; par=bone['parent']
-                  if par>=0:
-                      pq,pp=wb[par]; q=qmul(pq,lq); rp=qrot(pq,lp); wp=(rp[0]+pp[0],rp[1]+pp[1],rp[2]+pp[2]); wb.append((q,wp))
-                  else: wb.append((lq,lp))
-              rawpts=[]; skinpts=[]; per=[]
-              for m in meshes:
-                  mr=[]; ms=[]
-                  for node,v in m['vv']:
-                      rawpts.append(v); mr.append(v)
-                      if 0<=node<len(wb):
-                          q,pp=wb[node]; r=qrot(q,v); sv=(r[0]+pp[0],r[1]+pp[1],r[2]+pp[2])
-                      else: sv=v
-                      skinpts.append(sv); ms.append(sv)
-                  per.append({'mesh':m['index'],'texture':m['texture'],'raw':bounds(mr),'skinned':bounds(ms)})
-              return {'name':name,'version':ver,'meshCount':mc,'boneCount':bc,'actionCount':ac,'bone0':bones[0] if bones else None,'worldBone0':wb[0][1] if wb else None,'rawBounds':bounds(rawpts),'skinnedBounds':bounds(skinpts),'meshes':per}
-
-          def obj(path):
-              b=dec(Path(path).read_bytes()); ver=b[0]; header=struct.unpack_from('<h',b,2)[0]; sizes={0:30,1:32,2:33,3:45,4:46,5:54}; sz=sizes[ver]
-              count=min(max(header,0),(len(b)-4)//sz)
-              out=[]; p=4
-              for i in range(count):
-                  typ=struct.unpack_from('<h',b,p)[0]
-                  pos=struct.unpack_from('<fff',b,p+2); ang=struct.unpack_from('<fff',b,p+14); scale=struct.unpack_from('<f',b,p+26)[0]
-                  if typ in (80,85): out.append({'i':i,'type':typ,'pos':pos,'tile':(pos[0]/100,pos[1]/100),'angle':ang,'scale':scale})
-                  p+=sz
-              return {'version':ver,'header':header,'count':count,'len':len(b),'bridges':out}
-
-          result={
-            'bridge01':bmd('assets/Object1/Bridge01.bmd'),
-            'bridgeStone01':bmd('assets/Object1/BridgeStone01.bmd'),
-            'house01':bmd('assets/Object1/House01.bmd'),
-            'objects':obj('assets/World1/EncTerrain1.obj')
-          }
-          print('BRIDGE_PIVOT_DIAG='+json.dumps(result,separators=(',',':')))
+          def model(t):
+              p=lambda n:f'{n:02d}'
+              if 50<=t<=51:return 'FireLight'+p(t-49)
+              if t==52:return 'Bonfire01'
+              if t==55:return 'DoungeonGate01'
+              if t==80:return 'Bridge01'
+              if 81<=t<=84:return 'Fence'+p(t-80)
+              if t==85:return 'BridgeStone01'
+              if t==90:return 'StreetLight01'
+              if t==95:return 'Curtain01'
+              if 121<=t<=126:return 'HouseWall'+p(t-120)
+              if 127<=t<=129:return 'HouseEtc'+p(t-126)
+              if 130<=t<=132:return 'Light'+p(t-129)
+              if t==150:return 'Candle01'
+              return f'Type{t}'
+          b=dec(Path('assets/World1/EncTerrain1.obj').read_bytes()); ver=b[0]; header=struct.unpack_from('<h',b,2)[0]; sz={0:30,1:32,2:33,3:45,4:46,5:54}[ver]; count=min(header,(len(b)-4)//sz)
+          zones=[(125,145,142,165),(92,120,112,136),(153,120,173,136)]
+          out=[]; p=4
+          for i in range(count):
+              t=struct.unpack_from('<h',b,p)[0]; x,y,z=struct.unpack_from('<fff',b,p+2); ax,ay,az=struct.unpack_from('<fff',b,p+14); sc=struct.unpack_from('<f',b,p+26)[0]
+              tx,ty=x/100,y/100
+              if any(a<=tx<=c and bb<=ty<=d for a,bb,c,d in zones):
+                  out.append({'i':i,'type':t,'model':model(t),'tile':[round(tx,3),round(ty,3)],'z':round(z,2),'angle':[round(ax,1),round(ay,1),round(az,1)],'scale':round(sc,3)})
+              p+=sz
+          print('BRIDGE_NEARBY='+json.dumps(out,separators=(',',':')))
           PY
