@@ -181,6 +181,146 @@ function canvasTex(c){
  return t;
 }
 
+
+const OBJECT1="assets/Object1/";
+const MU_SF=.025, MU_CENTER=12750.0;
+async function getObjectBytes(name){
+ const r=await fetch(OBJECT1+name,{cache:"no-store"});
+ if(!r.ok) throw new Error(name+" HTTP "+r.status);
+ return new Uint8Array(await r.arrayBuffer());
+}
+function muDecrypt(src){
+ const key=[0xD1,0x73,0x52,0xF6,0xD2,0x9A,0xCB,0x27,0x3E,0xAF,0x59,0x31,0x37,0xB3,0xE7,0xA2];
+ const out=new Uint8Array(src.length);let mk=0x5E;
+ for(let i=0;i<src.length;i++){out[i]=((src[i]^key[i&15])-mk)&255;mk=(src[i]+0x3D)&255}
+ return out;
+}
+function fixedStr(b,o,n){let e=o;while(e<o+n&&b[e])e++;return new TextDecoder("latin1").decode(b.subarray(o,e))}
+function quatEuler(a){
+ const hx=a[0]*.5,hy=a[1]*.5,hz=a[2]*.5,sx=Math.sin(hx),cx=Math.cos(hx),sy=Math.sin(hy),cy=Math.cos(hy),sz=Math.sin(hz),cz=Math.cos(hz);
+ const q=[sx*cy*cz-cx*sy*sz,cx*sy*cz+sx*cy*sz,cx*cy*sz-sx*sy*cz,cx*cy*cz+sx*sy*sz],l=Math.hypot(...q)||1;return q.map(v=>v/l);
+}
+function quatMul(a,b){return[a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]]}
+function quatRot(q,v){const x=q[0],y=q[1],z=q[2],w=q[3],vx=v[0],vy=v[1],vz=v[2],tx=2*(y*vz-z*vy),ty=2*(z*vx-x*vz),tz=2*(x*vy-y*vx);return[vx+w*tx+(y*tz-z*ty),vy+w*ty+(z*tx-x*tz),vz+w*tz+(x*ty-y*tx)]}
+function objModel(t){
+ const p=n=>String(n).padStart(2,"0");
+ if(t>=0&&t<=12)return"Tree"+p(t+1)+".bmd";
+ if(t>=20&&t<=27)return"Grass"+p(t-19)+".bmd";
+ if(t>=30&&t<=34)return"Stone"+p(t-29)+".bmd";
+ if(t>=40&&t<=42)return"StoneStatue"+p(t-39)+".bmd";
+ if(t===43)return"SteelStatue01.bmd";
+ if(t>=44&&t<=46)return"Tomb"+p(t-43)+".bmd";
+ if(t>=50&&t<=51)return"FireLight"+p(t-49)+".bmd";
+ if(t===52)return"Bonfire01.bmd";
+ if(t===55)return"DoungeonGate01.bmd";
+ if(t>=56&&t<=57)return"MerchantAnimal"+p(t-55)+".bmd";
+ if(t===58)return"TreasureDrum01.bmd";if(t===59)return"TreasureChest01.bmd";if(t===60)return"Ship01.bmd";
+ if(t>=65&&t<=67)return"SteelWall"+p(t-64)+".bmd";if(t===68)return"SteelDoor01.bmd";
+ if(t>=69&&t<=74)return"StoneWall"+p(t-68)+".bmd";if(t>=75&&t<=78)return"StoneMuWall"+p(t-74)+".bmd";
+ if(t===80)return"Bridge01.bmd";if(t>=81&&t<=84)return"Fence"+p(t-80)+".bmd";if(t===85)return"BridgeStone01.bmd";
+ if(t===90)return"StreetLight01.bmd";if(t>=91&&t<=93)return"Cannon"+p(t-90)+".bmd";if(t===95)return"Curtain01.bmd";
+ if(t>=96&&t<=97)return"Sign"+p(t-95)+".bmd";if(t>=98&&t<=101)return"Carriage"+p(t-97)+".bmd";
+ if(t>=102&&t<=103)return"Straw"+p(t-101)+".bmd";if(t===105)return"Waterspout01.bmd";if(t>=106&&t<=109)return"Well"+p(t-105)+".bmd";
+ if(t===110)return"Hanging01.bmd";if(t===111)return"Stair01.bmd";if(t>=115&&t<=119)return"House"+p(t-114)+".bmd";
+ if(t===120)return"Tent01.bmd";if(t>=121&&t<=126)return"HouseWall"+p(t-120)+".bmd";if(t>=127&&t<=129)return"HouseEtc"+p(t-126)+".bmd";
+ if(t>=130&&t<=132)return"Light"+p(t-129)+".bmd";if(t>=140&&t<=146)return"Furniture"+p(t-139)+".bmd";
+ if(t===150)return"Candle01.bmd";if(t>=151&&t<=153)return"Beer"+p(t-150)+".bmd";return null;
+}
+function parseMuObj(raw){
+ const b=muDecrypt(raw),d=new DataView(b.buffer,b.byteOffset,b.byteLength),ver=b[0],map=b[1],header=d.getInt16(2,true),sizes={0:30,1:32,2:33,3:45,4:46,5:54},sz=sizes[ver];
+ if(!sz)throw new Error("OBJ versión "+ver+" no soportada");
+ const count=Math.min(Math.max(header,0),Math.floor((b.length-4)/sz)),groups=new Map();let p=4,total=0;
+ for(let i=0;i<count;i++,p+=sz){
+  const type=d.getInt16(p,true),scale=d.getFloat32(p+26,true),model=objModel(type);if(!model||scale<=.001||!Number.isFinite(scale))continue;
+  const pos=[d.getFloat32(p+2,true),d.getFloat32(p+6,true),d.getFloat32(p+10,true)],deg=[d.getFloat32(p+14,true),d.getFloat32(p+18,true),d.getFloat32(p+22,true)];
+  if(!pos.every(Number.isFinite)||!deg.every(Number.isFinite))continue;
+  const q=quatEuler(deg.map(v=>v*Math.PI/180));if(!groups.has(model))groups.set(model,[]);
+  groups.get(model).push({pos,scale,q});total++;
+ }
+ return{groups,total,ver,map};
+}
+function parseBmd(raw){
+ let b=raw,ver=b[3];if(fixedStr(b,0,3)!=="BMD")throw new Error("BMD inválido");
+ if(ver===12){const d0=new DataView(b.buffer,b.byteOffset,b.byteLength),size=d0.getInt32(4,true),dec=muDecrypt(b.slice(8,8+size)),nb=new Uint8Array(4+dec.length);nb.set(b.slice(0,4));nb.set(dec,4);b=nb}
+ else if(ver===15)throw new Error("BMD v15 todavía no soportado");
+ const d=new DataView(b.buffer,b.byteOffset,b.byteLength);let p=4;p+=32;const mc=d.getUint16(p,true);p+=2;const bc=d.getUint16(p,true);p+=2;const ac=d.getUint16(p,true);p+=2,rawMeshes=[];
+ for(let m=0;m<mc;m++){
+  const nv=d.getInt16(p,true),nn=d.getInt16(p+2,true),nt=d.getInt16(p+4,true),ntr=d.getInt16(p+6,true);p+=10;
+  const vv=[];for(let i=0;i<nv;i++,p+=16)vv.push({node:d.getInt16(p,true),v:[d.getFloat32(p+4,true),d.getFloat32(p+8,true),d.getFloat32(p+12,true)]});
+  const nnv=[];for(let i=0;i<nn;i++,p+=20)nnv.push({node:d.getInt16(p,true),v:[d.getFloat32(p+4,true),d.getFloat32(p+8,true),d.getFloat32(p+12,true)]});
+  const uv=[];for(let i=0;i<nt;i++,p+=8)uv.push([d.getFloat32(p,true),d.getFloat32(p+4,true)]);
+  const tr=[];for(let i=0;i<ntr;i++,p+=64){const poly=b[p],vi=[],ni=[],ti=[];for(let k=0;k<4;k++)vi.push(d.getInt16(p+2+k*2,true));for(let k=0;k<4;k++)ni.push(d.getInt16(p+10+k*2,true));for(let k=0;k<4;k++)ti.push(d.getInt16(p+18+k*2,true));tr.push({poly,vi,ni,ti})}
+  const texture=fixedStr(b,p,32);p+=32;rawMeshes.push({vv,nnv,uv,tr,texture});
+ }
+ const acts=[];for(let a=0;a<ac;a++){const nk=d.getInt16(p,true);p+=2;const lock=b[p++]!==0;if(lock)p+=nk*12;acts.push({nk})}
+ const bones=[];
+ for(let i=0;i<bc;i++){
+  const dummy=b[p++]!==0;if(dummy){bones.push({dummy:true,parent:-1,pos:[0,0,0],rot:[0,0,0]});continue}
+  p+=32;const parent=d.getInt16(p,true);p+=2;let pos=[0,0,0],rot=[0,0,0];
+  for(let a=0;a<ac;a++){const nk=acts[a].nk,ps=p;if(a===0&&nk)pos=[d.getFloat32(ps,true),d.getFloat32(ps+4,true),d.getFloat32(ps+8,true)];p+=nk*12;const rs=p;if(a===0&&nk)rot=[d.getFloat32(rs,true),d.getFloat32(rs+4,true),d.getFloat32(rs+8,true)];p+=nk*12}
+  bones.push({dummy:false,parent,pos,rot});
+ }
+ const wb=[];
+ for(let i=0;i<bones.length;i++){const x=bones[i];if(x.dummy){wb.push({q:[0,0,0,1],p:[0,0,0]});continue}const lq=quatEuler(x.rot);if(x.parent>=0&&x.parent<wb.length){const pa=wb[x.parent],qr=quatMul(pa.q,lq),rp=quatRot(pa.q,x.pos),ll=Math.hypot(...qr)||1;wb.push({q:qr.map(v=>v/ll),p:[rp[0]+pa.p[0],rp[1]+pa.p[1],rp[2]+pa.p[2]]})}else wb.push({q:lq,p:x.pos})}
+ const meshes=[];
+ for(const m of rawMeshes){
+  const a=[];const emit=k=>{const v=m.vv[k.vi],n=m.nnv[k.ni],uv=m.uv[k.ti]||[0,0];if(!v)return;const bv=wb[v.node]||{q:[0,0,0,1],p:[0,0,0]},r=quatRot(bv.q,v.v),pp=[r[0]+bv.p[0],r[1]+bv.p[1],r[2]+bv.p[2]],bn=n?(wb[n.node]||bv):bv,nr=n?quatRot(bn.q,n.v):[0,0,1],nl=Math.hypot(...nr)||1;a.push(pp[0],pp[1],pp[2],nr[0]/nl,nr[1]/nl,nr[2]/nl,uv[0],uv[1])};
+  for(const t of m.tr){const n=Math.min(Math.max(t.poly,0),4);if(n<3)continue;const q=[];for(let k=0;k<n;k++)q.push({vi:t.vi[k],ni:t.ni[k],ti:t.ti[k]});emit(q[0]);emit(q[1]);emit(q[2]);if(n===4){emit(q[0]);emit(q[2]);emit(q[3])}}
+  meshes.push({data:new Float32Array(a),texture:m.texture});
+ }
+ return meshes;
+}
+async function objectOzj(bytes){
+ const jpg=bytes.subarray(24),blob=new Blob([jpg],{type:"image/jpeg"}),url=URL.createObjectURL(blob);try{const img=new Image();await new Promise((r,j)=>{img.onload=r;img.onerror=j;img.src=url});const c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;const x=c.getContext("2d"),top=bytes[17]!==0;x.save();if(!top){x.translate(0,c.height);x.scale(1,-1)}x.drawImage(img,0,0);x.restore();return c}finally{URL.revokeObjectURL(url)}
+}
+function objectOzt(bytes){
+ const d=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),w=d.getInt16(16,true),h=d.getInt16(18,true);if(bytes[20]!==32||w<=0||h<=0)throw new Error("OZT inválido");
+ const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d"),im=x.createImageData(w,h);let p=22;
+ for(let sy=0;sy<h;sy++){const dy=h-1-sy;for(let xx=0;xx<w;xx++){const B=bytes[p++],G=bytes[p++],R=bytes[p++],A=bytes[p++],o=(dy*w+xx)*4;im.data[o]=R;im.data[o+1]=G;im.data[o+2]=B;im.data[o+3]=A}}x.putImageData(im,0,0);return c;
+}
+function repeatTex(c){
+ const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);gl.generateMipmap(gl.TEXTURE_2D);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);return t;
+}
+const objTexCache=new Map();
+async function objectTexture(path){
+ const f=path.replaceAll("\\","/").split("/").pop(),dot=f.lastIndexOf("."),base=dot<0?f:f.slice(0,dot),ext=(dot<0?"":f.slice(dot+1)).toLowerCase(),asset=base+(ext==="tga"?".OZT":".OZJ"),key=asset.toLowerCase();
+ if(objTexCache.has(key))return objTexCache.get(key);
+ const promise=(async()=>{try{const bytes=await getObjectBytes(asset),c=asset.toLowerCase().endsWith(".ozt")?objectOzt(bytes):await objectOzj(bytes);return repeatTex(c)}catch(e){console.warn("Texture",asset,e);const c=document.createElement("canvas");c.width=c.height=2;const x=c.getContext("2d");x.fillStyle="#8c887c";x.fillRect(0,0,2,2);return repeatTex(c)}})();objTexCache.set(key,promise);return promise;
+}
+const OBJ_VS=`#version 300 es
+precision highp float;
+layout(location=0)in vec3 aPos;layout(location=1)in vec3 aN;layout(location=2)in vec2 aUV;layout(location=3)in vec4 iPS;layout(location=4)in vec4 iQ;
+uniform mat4 uVP;out vec2 vUV;out vec3 vN;
+vec3 qr(vec4 q,vec3 v){return v+2.0*cross(q.xyz,cross(q.xyz,v)+q.w*v);}
+void main(){vec3 p=qr(iQ,aPos*iPS.w)+iPS.xyz,n=qr(iQ,aN);vec3 w=vec3((p.x-12750.0)*0.025,p.z*0.025,(p.y-12750.0)*0.025);vN=normalize(vec3(n.x,n.z,n.y));vUV=aUV;gl_Position=uVP*vec4(w,1.0);}
+`;
+const OBJ_FS=`#version 300 es
+precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uObjTex;out vec4 o;
+void main(){vec4 c=texture(uObjTex,vUV);if(c.a<.16)discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}
+`;
+const objProg=program(OBJ_VS,OBJ_FS),objVP=gl.getUniformLocation(objProg,"uVP"),objSampler=gl.getUniformLocation(objProg,"uObjTex");
+async function buildLorenciaObjects(){
+ const parsed=parseMuObj(await getBytes("EncTerrain1.obj")),renders=[],entries=[...parsed.groups.entries()];let done=0,failed=0,instances=0;
+ for(const [model,list] of entries){
+  try{
+   statusEl.textContent="Objetos Lorencia "+done+"/"+entries.length+" · "+model;
+   const meshes=parseBmd(await getObjectBytes(model)),idata=new Float32Array(list.length*8);let q=0;
+   for(const x of list){idata[q++]=x.pos[0];idata[q++]=x.pos[1];idata[q++]=x.pos[2];idata[q++]=x.scale;idata[q++]=x.q[0];idata[q++]=x.q[1];idata[q++]=x.q[2];idata[q++]=x.q[3]}
+   const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.STATIC_DRAW);
+   for(const m of meshes){
+    if(!m.data.length||/shadow/i.test(m.texture))continue;const vao=gl.createVertexArray();gl.bindVertexArray(vao);const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,32,24);
+    gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,4,gl.FLOAT,false,32,0);gl.vertexAttribDivisor(3,1);gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,32,16);gl.vertexAttribDivisor(4,1);
+    renders.push({vao,count:m.data.length/8,n:list.length,tex:await objectTexture(m.texture)});
+   }
+   instances+=list.length;
+  }catch(e){failed++;console.warn("Modelo omitido",model,e)}
+  done++;await new Promise(r=>setTimeout(r,0));
+ }
+ return{renders,instances,failed};
+}
+
 async function main(){
  if(!gl)return;
  statusEl.textContent="Cargando Terrain.map + 14 texturas originales…";
@@ -197,7 +337,7 @@ async function main(){
  }
  const lightCanvas=await ozjToCanvas(lb,256);
 
- const N=255,cellScale=2.5,heightScale=.22;
+ const N=255,cellScale=2.5,heightScale=.0375;
  const verts=new Float32Array((N+1)*(N+1)*5);
  const inds=new Uint32Array(N*N*6);
  let k=0;
@@ -224,9 +364,9 @@ async function main(){
    gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,t);gl.uniform1i(gl.getUniformLocation(prog,n),i);
  });
  gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
- statusEl.textContent="Terrain.map + tiles + luz originales cargados";
+ statusEl.textContent="Terreno real listo · cargando árboles y edificios…";\n let objectScene={renders:[],instances:0,failed:0};\n buildLorenciaObjects().then(x=>{objectScene=x;statusEl.textContent="Lorencia · "+x.instances+" objetos originales"+(x.failed?" · "+x.failed+" modelos omitidos":"");}).catch(e=>{console.warn(e);statusEl.textContent="Terreno listo · error cargando objetos";});
 
- let yaw=-.78,pitch=.80,dist=500,targetY=22,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
+ let yaw=-.72,pitch=.58,dist=145,targetX=26,targetY=6,targetZ=-9,drag=false,lastX=0,lastY=0,pinch=0,lastT=performance.now(),frames=0;
  function resize(){
    const d=Math.min(devicePixelRatio||1,1.45),w=Math.max(1,Math.floor(innerWidth*d)),h=Math.max(1,Math.floor(innerHeight*d));
    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}
@@ -243,9 +383,9 @@ async function main(){
  canvas.addEventListener("pointerdown",e=>{drag=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId)});
  canvas.addEventListener("pointermove",e=>{if(!drag)return;yaw+=(e.clientX-lastX)*.0055;pitch=Math.max(.28,Math.min(1.28,pitch+(e.clientY-lastY)*.0045));lastX=e.clientX;lastY=e.clientY});
  canvas.addEventListener("pointerup",()=>drag=false);canvas.addEventListener("pointercancel",()=>drag=false);
- canvas.addEventListener("wheel",e=>{e.preventDefault();dist=Math.max(130,Math.min(900,dist+e.deltaY*.3))},{passive:false});
+ canvas.addEventListener("wheel",e=>{e.preventDefault();dist=Math.max(45,Math.min(800,dist+e.deltaY*.22))},{passive:false});
  canvas.addEventListener("touchstart",e=>{if(e.touches.length===2)pinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY)},{passive:true});
- canvas.addEventListener("touchmove",e=>{if(e.touches.length===2){e.preventDefault();const q=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(pinch)dist=Math.max(130,Math.min(900,dist+(pinch-q)*.85));pinch=q}},{passive:false});
+ canvas.addEventListener("touchmove",e=>{if(e.touches.length===2){e.preventDefault();const q=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(pinch)dist=Math.max(45,Math.min(800,dist+(pinch-q)*.5));pinch=q}},{passive:false});
  canvas.addEventListener("touchend",()=>pinch=0,{passive:true});
  requestAnimationFrame(frame);
 }
