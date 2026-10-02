@@ -3,8 +3,24 @@ from pathlib import Path
 p = Path('index.html')
 s = p.read_text(encoding='utf-8')
 
+# Correct the two first Lorencia NPC placements if the renderer is already installed.
 if 'const LORENCIA_NPCS=' in s:
-    print('NPC renderer already present')
+    old_hanzo = '{id:251,name:"Hanzo the Blacksmith",x:116,y:141,dir:3,model:"Smith01.bmd"}'
+    old_pasi = '{id:254,name:"Pasi the Mage",x:118,y:113,dir:3,model:"Wizard01.bmd"}'
+    new_hanzo = '{id:251,name:"Hanzo the Blacksmith",x:118,y:113,dir:3,model:"Smith01.bmd"}'
+    new_pasi = '{id:254,name:"Pasi the Mage",x:116,y:141,dir:3,model:"Wizard01.bmd"}'
+    changed = False
+    if old_hanzo in s:
+        s = s.replace(old_hanzo, new_hanzo, 1)
+        changed = True
+    if old_pasi in s:
+        s = s.replace(old_pasi, new_pasi, 1)
+        changed = True
+    if changed:
+        p.write_text(s, encoding='utf-8')
+        print('Lorencia NPC positions corrected: Hanzo <-> Pasi')
+    else:
+        print('NPC renderer already present and positions already corrected')
     raise SystemExit(0)
 
 # NPC asset loader
@@ -48,8 +64,8 @@ s = s.replace(anchor, npc_tex + anchor, 1)
 # First verified original Lorencia NPC block: Hanzo + Pasi.
 anchor = 'async function buildPlayer(height){'
 npc_builder = r'''const LORENCIA_NPCS=[
- {id:251,name:"Hanzo the Blacksmith",x:116,y:141,dir:3,model:"Smith01.bmd"},
- {id:254,name:"Pasi the Mage",x:118,y:113,dir:3,model:"Wizard01.bmd"}
+ {id:251,name:"Hanzo the Blacksmith",x:118,y:113,dir:3,model:"Smith01.bmd"},
+ {id:254,name:"Pasi the Mage",x:116,y:141,dir:3,model:"Wizard01.bmd"}
 ];
 function npcDirectionQuat(dir){
  const mapAngle=Math.PI-(dir&7)*Math.PI*.25;
