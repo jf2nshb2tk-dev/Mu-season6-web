@@ -376,10 +376,24 @@ async function main(){
  function frame(t){
    resize();
    const cp=Math.cos(pitch),sp=Math.sin(pitch),eye=[Math.cos(yaw)*cp*dist,sp*dist+targetY,Math.sin(yaw)*cp*dist];
-   gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,mul(perspective(.68,canvas.width/canvas.height,.1,1800),lookAt(eye,[0,targetY,0],[0,1,0])));gl.uniform1f(uTime,t/1000);
+   const vp=mul(perspective(.68,canvas.width/canvas.height,.1,1800),lookAt(eye,[0,targetY,0],[0,1,0]));
+   gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,vp);gl.uniform1f(uTime,t/1000);
+   gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
    gl.clearColor(.012,.015,.018,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
    gl.bindVertexArray(vao);gl.drawElements(gl.TRIANGLES,inds.length,gl.UNSIGNED_INT,0);
-   frames++;if(t-lastT>750){fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · 14 tiles MU · Terrain.map real";frames=0;lastT=t}
+
+   if(objectScene.renders.length){
+     gl.useProgram(objProg);gl.uniformMatrix4fv(objVP,false,vp);gl.uniform1i(objSampler,0);
+     gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+     gl.activeTexture(gl.TEXTURE0);
+     for(const r of objectScene.renders){
+       gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);
+       gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);
+     }
+     gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
+   }
+
+   frames++;if(t-lastT>750){fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos MU · Terrain.map real";frames=0;lastT=t}
    requestAnimationFrame(frame);
  }
  canvas.addEventListener("pointerdown",e=>{drag=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId)});
