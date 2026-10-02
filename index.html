@@ -26,11 +26,11 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 <body>
 <canvas id="gl"></canvas>
 <div id="hud"><b>MU Season 6 Web · World1 / Lorencia</b><br><span id="status">Cargando terreno original…</span><br><span id="fps"></span></div>
-<div id="hint">CÁMARA LIBRE · Joystick: mover · Arrastre: mirar</div>
+<div id="hint">MODO PJ · Joystick: mover personaje · Cámara MU siguiendo</div>
 <div id="joyBase"><div id="joyKnob"></div></div>
 <div id="camButtons">
   <button class="camBtn" id="camUp">▲</button><button class="camBtn" id="camDown">▼</button>
-  <button class="camBtn" id="camHome">IR PJ</button><button class="camBtn" id="controlMode">MODO CAM</button>
+  <button class="camBtn" id="camHome">IR PJ</button><button class="camBtn" id="controlMode">MODO PJ</button>
   <button class="camBtn" id="camSpeed">VELOCIDAD x1</button>
 </div>
 <div id="error"></div><div id="rotate">Gir&aacute; el iPhone<br>MU Season 6 Web se juega en horizontal</div>
@@ -575,17 +575,18 @@ async function main(){
    else if(playerReady)statusEl.textContent="Dark Wizard original listo · cargando objetos de Lorencia…";
  };
  buildLorenciaObjects().then(x=>{objectScene=x;objectsReady=true;refreshStatus();}).catch(e=>{console.warn(e);statusEl.textContent="Terreno listo · error cargando objetos";});
- buildPlayer(height).then(x=>{playerScene=x;playerReady=true;refreshStatus();}).catch(e=>{console.warn("Player",e);statusEl.textContent="Lorencia lista · error cargando personaje";});
+ buildPlayer(height).then(x=>{playerScene=x;playerReady=true;resetCameraToPlayer();refreshStatus();}).catch(e=>{console.warn("Player",e);statusEl.textContent="Lorencia lista · error cargando personaje";});
 
  let targetX=26.25,targetY=2.8,targetZ=-8.75;
- let camYaw=-.78+Math.PI,camPitch=-.58,camSpeedMul=1;
- const startOrbitYaw=-.78,startOrbitPitch=.58,startDist=14;
- const startCp=Math.cos(startOrbitPitch);
- let camX=targetX+Math.cos(startOrbitYaw)*startCp*startDist;
- let camY=targetY+Math.sin(startOrbitPitch)*startDist;
- let camZ=targetZ+Math.sin(startOrbitYaw)*startCp*startDist;
+ const MU_CAM_YAW=2.36,MU_CAM_PITCH=.66,MU_CAM_DIST=20.5;
+ let playerCamYaw=MU_CAM_YAW,playerCamPitch=MU_CAM_PITCH,playerCamDist=MU_CAM_DIST;
+ const startCp=Math.cos(playerCamPitch);
+ let camX=targetX+Math.cos(playerCamYaw)*startCp*playerCamDist;
+ let camY=targetY+Math.sin(playerCamPitch)*playerCamDist;
+ let camZ=targetZ+Math.sin(playerCamYaw)*startCp*playerCamDist;
+ let camYaw=playerCamYaw+Math.PI,camPitch=-playerCamPitch,camSpeedMul=1;
  let lookDrag=false,lookPointer=-1,lastX=0,lastY=0,lastT=performance.now(),frames=0,lastFrameT=performance.now();
- let joyX=0,joyY=0,joyPointer=-1,verticalMove=0,controlModeName="camera";
+ let joyX=0,joyY=0,joyPointer=-1,verticalMove=0,controlModeName="player";
  const keys=new Set();
  const ATT_SAFE=0x01,ATT_NOMOVE=0x04,ATT_NOGROUND=0x08;
 
@@ -593,17 +594,35 @@ async function main(){
    const cp=Math.cos(camPitch);
    return [Math.cos(camYaw)*cp,Math.sin(camPitch),Math.sin(camYaw)*cp];
  }
- function resetCameraToPlayer(){
+ function playerWorldTarget(){
    if(playerReady&&playerScene.tilePos){
-     targetX=(playerScene.tilePos[0]*100-MU_CENTER)*MU_SF;
-     targetZ=(playerScene.tilePos[1]*100-MU_CENTER)*MU_SF;
-     targetY=terrainHeightAt(playerScene.tilePos[0],playerScene.tilePos[1])*MU_SF+2.8;
+     return[
+       (playerScene.tilePos[0]*100-MU_CENTER)*MU_SF,
+       terrainHeightAt(playerScene.tilePos[0],playerScene.tilePos[1])*MU_SF+2.8,
+       (playerScene.tilePos[1]*100-MU_CENTER)*MU_SF
+     ];
    }
-   const yaw=-.78,pitch=.58,dist=14,cp=Math.cos(pitch);
-   camX=targetX+Math.cos(yaw)*cp*dist;
-   camY=targetY+Math.sin(pitch)*dist;
-   camZ=targetZ+Math.sin(yaw)*cp*dist;
-   camYaw=yaw+Math.PI;camPitch=-pitch;
+   return[targetX,targetY,targetZ];
+ }
+ function updatePlayerFollowCamera(dt,snap=false){
+   const p=playerWorldTarget(),cp=Math.cos(playerCamPitch);
+   const dx=Math.cos(playerCamYaw)*cp*playerCamDist;
+   const dy=Math.sin(playerCamPitch)*playerCamDist;
+   const dz=Math.sin(playerCamYaw)*cp*playerCamDist;
+   const desiredX=p[0]+dx,desiredY=p[1]+dy,desiredZ=p[2]+dz;
+   const a=snap?1:(1-Math.exp(-dt*11));
+   targetX+= (p[0]-targetX)*a;targetY+=(p[1]-targetY)*a;targetZ+=(p[2]-targetZ)*a;
+   camX+=(desiredX-camX)*a;camY+=(desiredY-camY)*a;camZ+=(desiredZ-camZ)*a;
+   camYaw=playerCamYaw+Math.PI;camPitch=-playerCamPitch;
+ }
+ function resetCameraToPlayer(){
+   playerCamYaw=MU_CAM_YAW;playerCamPitch=MU_CAM_PITCH;playerCamDist=MU_CAM_DIST;
+   const p=playerWorldTarget();targetX=p[0];targetY=p[1];targetZ=p[2];
+   const cp=Math.cos(playerCamPitch);
+   camX=targetX+Math.cos(playerCamYaw)*cp*playerCamDist;
+   camY=targetY+Math.sin(playerCamPitch)*playerCamDist;
+   camZ=targetZ+Math.sin(playerCamYaw)*cp*playerCamDist;
+   camYaw=playerCamYaw+Math.PI;camPitch=-playerCamPitch;
  }
  function resize(){
    const d=Math.min(devicePixelRatio||1,1.45),w=Math.max(1,Math.floor(innerWidth*d)),h=Math.max(1,Math.floor(innerHeight*d));
@@ -654,7 +673,11 @@ async function main(){
    playerScene.facing=a;
  }
  function updateFreeCamera(dt){
-   if(controlModeName==="player"){updatePlayerMovement(dt);return}
+   if(controlModeName==="player"){
+     updatePlayerMovement(dt);
+     updatePlayerFollowCamera(dt,false);
+     return;
+   }
    const f=cameraForward(),flatLen=Math.hypot(f[0],f[2])||1;
    const fx=f[0]/flatLen,fz=f[2]/flatLen,rx=-fz,rz=fx;
    let moveX=joyX,moveY=-joyY;
@@ -680,7 +703,8 @@ async function main(){
    if(playerReady&&controlModeName!=="player")playerScene.moveAmount=0;
    updateFreeCamera(dt);
    updatePlayerAnimation(dt);
-   const f=cameraForward(),eye=[camX,camY,camZ],look=[camX+f[0],camY+f[1],camZ+f[2]];
+   const f=cameraForward(),eye=[camX,camY,camZ];
+   const look=controlModeName==="player"?[targetX,targetY,targetZ]:[camX+f[0],camY+f[1],camZ+f[2]];
    const vp=mul(perspective(.72,canvas.width/canvas.height,.1,1800),lookAt(eye,look,[0,1,0]));
    gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,vp);gl.uniform1f(uTime,t/1000);
    // Object rendering uses texture unit 0. Rebind every terrain texture each frame
@@ -733,8 +757,14 @@ async function main(){
  canvas.addEventListener("pointermove",e=>{
    if(!lookDrag||e.pointerId!==lookPointer)return;
    const dx=e.clientX-lastX,dy=e.clientY-lastY;
-   camYaw+=dx*.0052;
-   camPitch=Math.max(-1.42,Math.min(1.42,camPitch-dy*.0046));
+   if(controlModeName==="player"){
+     playerCamYaw+=dx*.0052;
+     playerCamPitch=Math.max(.35,Math.min(1.05,playerCamPitch+dy*.0042));
+     updatePlayerFollowCamera(0,true);
+   }else{
+     camYaw+=dx*.0052;
+     camPitch=Math.max(-1.42,Math.min(1.42,camPitch-dy*.0046));
+   }
    lastX=e.clientX;lastY=e.clientY;
  });
  const stopLook=e=>{if(e.pointerId===lookPointer){lookDrag=false;lookPointer=-1}};
@@ -762,12 +792,22 @@ async function main(){
    el.addEventListener("pointerdown",on);el.addEventListener("pointerup",off);el.addEventListener("pointercancel",off);el.addEventListener("pointerleave",e=>{if(e.buttons===0)verticalMove=0});
  }
  holdButton(camUp,1);holdButton(camDown,-1);
- camHome.addEventListener("click",e=>{e.preventDefault();resetCameraToPlayer()});
+ camHome.addEventListener("click",e=>{
+   e.preventDefault();
+   controlModeName="player";controlMode.textContent="MODO PJ";
+   $("#hint").textContent="MODO PJ · Joystick: mover personaje · Cámara MU siguiendo";
+   resetCameraToPlayer();
+ });
  controlMode.addEventListener("click",e=>{
    e.preventDefault();
    controlModeName=controlModeName==="camera"?"player":"camera";
    controlMode.textContent=controlModeName==="player"?"MODO PJ":"MODO CAM";
-   $("#hint").textContent=controlModeName==="player"?"MODO PJ · Joystick: mover personaje · Arrastre: mirar":"CÁMARA LIBRE · Joystick: mover · Arrastre: mirar";
+   if(controlModeName==="player"){
+     resetCameraToPlayer();
+     $("#hint").textContent="MODO PJ · Joystick: mover personaje · Cámara MU siguiendo";
+   }else{
+     $("#hint").textContent="CÁMARA LIBRE · Joystick: mover · Arrastre: mirar";
+   }
  });
  camSpeed.addEventListener("click",e=>{
    e.preventDefault();
@@ -777,9 +817,26 @@ async function main(){
 
  window.addEventListener("keydown",e=>{keys.add(e.code);if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code))e.preventDefault()},{passive:false});
  window.addEventListener("keyup",e=>keys.delete(e.code));
+ let followPinch=0;
+ canvas.addEventListener("touchstart",e=>{
+   if(controlModeName==="player"&&e.touches.length===2)followPinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+ },{passive:true});
+ canvas.addEventListener("touchmove",e=>{
+   if(controlModeName==="player"&&e.touches.length===2){
+     e.preventDefault();
+     const q=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+     if(followPinch)playerCamDist=Math.max(10,Math.min(38,playerCamDist+(followPinch-q)*.035));
+     followPinch=q;updatePlayerFollowCamera(0,true);
+   }
+ },{passive:false});
+ canvas.addEventListener("touchend",()=>followPinch=0,{passive:true});
  canvas.addEventListener("wheel",e=>{
    e.preventDefault();
-   if(controlModeName!=="camera")return;
+   if(controlModeName==="player"){
+     playerCamDist=Math.max(10,Math.min(38,playerCamDist+e.deltaY*.02));
+     updatePlayerFollowCamera(0,true);
+     return;
+   }
    const f=cameraForward(),step=Math.sign(e.deltaY)*-4*camSpeedMul;
    camX+=f[0]*step;camY+=f[1]*step;camZ+=f[2]*step;
  },{passive:false});
