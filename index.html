@@ -469,7 +469,7 @@ async function buildLorenciaObjects(){
    for(const x of list){idata[q++]=x.pos[0];idata[q++]=x.pos[1];idata[q++]=x.pos[2];idata[q++]=x.scale;idata[q++]=x.q[0];idata[q++]=x.q[1];idata[q++]=x.q[2];idata[q++]=x.q[3]}
    const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.STATIC_DRAW);
    for(const m of meshes){
-    if(!m.data.length||/shadow/i.test(m.texture))continue;const vao=gl.createVertexArray();gl.bindVertexArray(vao);const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);
+    if(!m.data.length||/shadow/i.test(m.texture)||(model.toLowerCase()==="bridge01.bmd"&&m.meshIndex===1))continue;const vao=gl.createVertexArray();gl.bindVertexArray(vao);const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,32,24);
     gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,4,gl.FLOAT,false,32,0);gl.vertexAttribDivisor(3,1);gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,32,16);gl.vertexAttribDivisor(4,1);
     const mn=model.toLowerCase(),mi=m.meshIndex;
@@ -582,7 +582,7 @@ async function main(){
  statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
  let objectScene={renders:[],instances:0,failed:0},playerScene={renders:[],parts:0,meshes:0,tile:[138,124]},objectsReady=false,playerReady=false;
  const refreshStatus=()=>{
-   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · blends MU corregidos · PJ/cámara OK · ATT";
+   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · blends MU + Bridge01 corregidos · PJ/cámara OK · ATT";
    else if(objectsReady)statusEl.textContent="Lorencia lista · cargando personaje original…";
    else if(playerReady)statusEl.textContent="Dark Wizard original listo · cargando objetos de Lorencia…";
  };
