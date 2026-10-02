@@ -30,13 +30,14 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 <div id="joyBase"><div id="joyKnob"></div></div>
 <div id="camButtons">
   <button class="camBtn" id="camUp">▲</button><button class="camBtn" id="camDown">▼</button>
-  <button class="camBtn" id="camHome">PJ</button><button class="camBtn" id="camSpeed">VELOCIDAD x1</button>
+  <button class="camBtn" id="camHome">IR PJ</button><button class="camBtn" id="controlMode">MODO CAM</button>
+  <button class="camBtn" id="camSpeed">VELOCIDAD x1</button>
 </div>
 <div id="error"></div><div id="rotate">Gir&aacute; el iPhone<br>MU Season 6 Web se juega en horizontal</div>
 <script>
 const $=s=>document.querySelector(s);
 const canvas=$("#gl"), statusEl=$("#status"), fpsEl=$("#fps"), errorEl=$("#error");
-const joyBase=$("#joyBase"),joyKnob=$("#joyKnob"),camUp=$("#camUp"),camDown=$("#camDown"),camHome=$("#camHome"),camSpeed=$("#camSpeed");
+const joyBase=$("#joyBase"),joyKnob=$("#joyKnob"),camUp=$("#camUp"),camDown=$("#camDown"),camHome=$("#camHome"),controlMode=$("#controlMode"),camSpeed=$("#camSpeed");
 function fail(e){console.error(e);errorEl.style.display="block";errorEl.textContent="Error cargando Lorencia:\n"+(e?.stack||e);statusEl.textContent="Error";}
 const gl=canvas.getContext("webgl2",{antialias:true,alpha:false,powerPreference:"high-performance"});
 if(!gl) fail("WebGL 2 no está disponible.");
@@ -93,6 +94,13 @@ function parseTerrainMap(bytes){
    return {version:bytes[0],map:1,layer1:bytes.slice(o,o+n),layer2:bytes.slice(o+n,o+2*n),alpha:bytes.slice(o+2*n,o+3*n)};
  }
  throw new Error("Terrain map inesperado: "+bytes.length+" bytes");
+}
+function parseTerrainAtt(raw){
+ const b=muDecrypt(raw),mask=[0xFC,0xCF,0xAB];
+ for(let i=0;i<b.length;i++)b[i]^=mask[i%3];
+ if(b.length!==65540)throw new Error("Terrain ATT inesperado: "+b.length+" bytes");
+ if(b[0]!==0||b[2]!==255||b[3]!==255)throw new Error("Terrain ATT cabecera inválida");
+ return {version:b[0],map:b[1],flags:b.slice(4)};
 }
 function shader(type,src){
  const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
@@ -400,7 +408,7 @@ async function buildPlayer(height){
  const spawnTileX=138,spawnTileY=124,spawnZ=(height.data[spawnTileY*256+spawnTileX]||0)*1.5+2;
  const facing=quatEuler([0,0,Math.PI*.25]);
  const idata=new Float32Array([spawnTileX*100,spawnTileY*100,spawnZ,.85,facing[0],facing[1],facing[2],facing[3]]);
- const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.STATIC_DRAW);
+ const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.DYNAMIC_DRAW);
  const renders=[];let meshesLoaded=0;
  // Draw the base Player.bmd too. It carries the character's base body/head data;
  // equipment pieces are then linked to the exact same idle skeleton.
@@ -433,16 +441,24 @@ async function buildPlayer(height){
      meshesLoaded++;
    }
  }
- return{renders,parts:models.length+1,meshes:meshesLoaded,tile:[spawnTileX,spawnTileY]};
+ return{renders,parts:models.length+1,meshes:meshesLoaded,tile:[spawnTileX,spawnTileY],tilePos:[spawnTileX,spawnTileY],instanceBuffer:inst,instanceData:idata,facing:.25*Math.PI};
 }
 
 async function main(){
  if(!gl)return;
  statusEl.textContent="Cargando Terrain.map + 14 texturas originales…";
- const [hb,mb,lb,...tileBytes]=await Promise.all([
-   getBytes("TerrainHeight.OZB"),getBytes("EncTerrain1.map"),getBytes("TerrainLight.OZJ"),...TILE_FILES.map(getBytes)
+ const [hb,mb,ab,lb,...tileBytes]=await Promise.all([
+   getBytes("TerrainHeight.OZB"),getBytes("EncTerrain1.map"),getBytes("EncTerrain1.att"),getBytes("TerrainLight.OZJ"),...TILE_FILES.map(getBytes)
  ]);
- const height=decodeHeightOZB(hb), mapping=parseTerrainMap(muDecrypt(mb));
+ const height=decodeHeightOZB(hb), mapping=parseTerrainMap(muDecrypt(mb)),terrainAtt=parseTerrainAtt(ab);
+ const terrainFlagsAt=(tx,ty)=>{
+   const x=Math.max(0,Math.min(255,Math.floor(tx))),y=Math.max(0,Math.min(255,Math.floor(ty)));
+   return terrainAtt.flags[y*256+x]||0;
+ };
+ const terrainHeightAt=(tx,ty)=>{
+   const x=Math.max(0,Math.min(255,Math.round(tx))),y=Math.max(0,Math.min(255,Math.round(ty)));
+   return (height.data[y*256+x]||0)*1.5+2;
+ };
 
  statusEl.textContent="Armando atlas de texturas MU…";
  const atlas=document.createElement("canvas");atlas.width=1024;atlas.height=1024;const ax=atlas.getContext("2d"),tileScales=new Float32Array(28);
@@ -485,7 +501,7 @@ async function main(){
  statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
  let objectScene={renders:[],instances:0,failed:0},playerScene={renders:[],parts:0,meshes:0,tile:[138,124]},objectsReady=false,playerReady=false;
  const refreshStatus=()=>{
-   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · Dark Wizard original @ 138,124";
+   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · PJ skin PENDIENTE · ATT/colisiones listas";
    else if(objectsReady)statusEl.textContent="Lorencia lista · cargando personaje original…";
    else if(playerReady)statusEl.textContent="Dark Wizard original listo · cargando objetos de Lorencia…";
  };
@@ -500,14 +516,20 @@ async function main(){
  let camY=targetY+Math.sin(startOrbitPitch)*startDist;
  let camZ=targetZ+Math.sin(startOrbitYaw)*startCp*startDist;
  let lookDrag=false,lookPointer=-1,lastX=0,lastY=0,lastT=performance.now(),frames=0,lastFrameT=performance.now();
- let joyX=0,joyY=0,joyPointer=-1,verticalMove=0;
+ let joyX=0,joyY=0,joyPointer=-1,verticalMove=0,controlModeName="camera";
  const keys=new Set();
+ const ATT_SAFE=0x01,ATT_NOMOVE=0x04,ATT_NOGROUND=0x08;
 
  function cameraForward(){
    const cp=Math.cos(camPitch);
    return [Math.cos(camYaw)*cp,Math.sin(camPitch),Math.sin(camYaw)*cp];
  }
  function resetCameraToPlayer(){
+   if(playerReady&&playerScene.tilePos){
+     targetX=(playerScene.tilePos[0]*100-MU_CENTER)*MU_SF;
+     targetZ=(playerScene.tilePos[1]*100-MU_CENTER)*MU_SF;
+     targetY=terrainHeightAt(playerScene.tilePos[0],playerScene.tilePos[1])*MU_SF+2.8;
+   }
    const yaw=-.78,pitch=.58,dist=14,cp=Math.cos(pitch);
    camX=targetX+Math.cos(yaw)*cp*dist;
    camY=targetY+Math.sin(pitch)*dist;
@@ -518,7 +540,35 @@ async function main(){
    const d=Math.min(devicePixelRatio||1,1.45),w=Math.max(1,Math.floor(innerWidth*d)),h=Math.max(1,Math.floor(innerHeight*d));
    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}
  }
+ function updatePlayerMovement(dt){
+   if(!playerReady||!playerScene.instanceBuffer||!playerScene.instanceData)return;
+   let moveX=joyX,moveY=-joyY;
+   if(keys.has("KeyA")||keys.has("ArrowLeft"))moveX-=1;
+   if(keys.has("KeyD")||keys.has("ArrowRight"))moveX+=1;
+   if(keys.has("KeyW")||keys.has("ArrowUp"))moveY+=1;
+   if(keys.has("KeyS")||keys.has("ArrowDown"))moveY-=1;
+   const ml=Math.hypot(moveX,moveY);
+   if(ml<.08)return;
+   if(ml>1){moveX/=ml;moveY/=ml}
+   // Movement is camera-relative so mobile controls remain intuitive.
+   const flatYaw=camYaw,fx=Math.cos(flatYaw),fy=Math.sin(flatYaw),rx=-fy,ry=fx;
+   const dx=fx*moveY+rx*moveX,dy=fy*moveY+ry*moveX;
+   const speedTiles=4.2;
+   const oldX=playerScene.tilePos[0],oldY=playerScene.tilePos[1];
+   let nx=oldX+dx*speedTiles*dt,ny=oldY+dy*speedTiles*dt;
+   nx=Math.max(1,Math.min(254,nx));ny=Math.max(1,Math.min(254,ny));
+   const flags=terrainFlagsAt(nx,ny);
+   if(flags&(ATT_NOMOVE|ATT_NOGROUND))return;
+   playerScene.tilePos[0]=nx;playerScene.tilePos[1]=ny;
+   const a=Math.atan2(dy,dx),q=quatEuler([0,0,a]),data=playerScene.instanceData;
+   data[0]=nx*100;data[1]=ny*100;data[2]=terrainHeightAt(nx,ny);data[3]=.85;
+   data[4]=q[0];data[5]=q[1];data[6]=q[2];data[7]=q[3];
+   gl.bindBuffer(gl.ARRAY_BUFFER,playerScene.instanceBuffer);
+   gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
+   playerScene.facing=a;
+ }
  function updateFreeCamera(dt){
+   if(controlModeName==="player"){updatePlayerMovement(dt);return}
    const f=cameraForward(),flatLen=Math.hypot(f[0],f[2])||1;
    const fx=f[0]/flatLen,fz=f[2]/flatLen,rx=-fz,rz=fx;
    let moveX=joyX,moveY=-joyY;
@@ -573,7 +623,12 @@ async function main(){
    }
 
    frames++;if(t-lastT>750){
-     fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos MU · "+(playerReady?"Dark Wizard":"cargando PJ")+" · Cámara libre x"+camSpeedMul;
+     let cellInfo="";
+     if(playerReady&&playerScene.tilePos){
+       const tx=Math.floor(playerScene.tilePos[0]),ty=Math.floor(playerScene.tilePos[1]),fl=terrainFlagsAt(tx,ty);
+       cellInfo=" · "+tx+","+ty+(fl&ATT_SAFE?" SAFE":"")+(fl&ATT_NOMOVE?" BLOQ":"");
+     }
+     fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos · "+(controlModeName==="player"?"MODO PJ":"CAM LIBRE")+" x"+camSpeedMul+cellInfo;
      frames=0;lastT=t
    }
    requestAnimationFrame(frame);
@@ -610,12 +665,18 @@ async function main(){
  joyBase.addEventListener("pointerup",stopJoy);joyBase.addEventListener("pointercancel",stopJoy);
 
  function holdButton(el,value){
-   const on=e=>{e.preventDefault();verticalMove=value;el.setPointerCapture?.(e.pointerId)};
+   const on=e=>{e.preventDefault();if(controlModeName!=="camera")return;verticalMove=value;el.setPointerCapture?.(e.pointerId)};
    const off=e=>{e.preventDefault();verticalMove=0};
    el.addEventListener("pointerdown",on);el.addEventListener("pointerup",off);el.addEventListener("pointercancel",off);el.addEventListener("pointerleave",e=>{if(e.buttons===0)verticalMove=0});
  }
  holdButton(camUp,1);holdButton(camDown,-1);
  camHome.addEventListener("click",e=>{e.preventDefault();resetCameraToPlayer()});
+ controlMode.addEventListener("click",e=>{
+   e.preventDefault();
+   controlModeName=controlModeName==="camera"?"player":"camera";
+   controlMode.textContent=controlModeName==="player"?"MODO PJ":"MODO CAM";
+   $("#hint").textContent=controlModeName==="player"?"MODO PJ · Joystick: mover personaje · Arrastre: mirar":"CÁMARA LIBRE · Joystick: mover · Arrastre: mirar";
+ });
  camSpeed.addEventListener("click",e=>{
    e.preventDefault();
    camSpeedMul=camSpeedMul===1?3:camSpeedMul===3?6:1;
@@ -626,6 +687,7 @@ async function main(){
  window.addEventListener("keyup",e=>keys.delete(e.code));
  canvas.addEventListener("wheel",e=>{
    e.preventDefault();
+   if(controlModeName!=="camera")return;
    const f=cameraForward(),step=Math.sign(e.deltaY)*-4*camSpeedMul;
    camX+=f[0]*step;camY+=f[1]*step;camZ+=f[2]*step;
  },{passive:false});
