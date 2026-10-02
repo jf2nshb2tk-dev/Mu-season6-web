@@ -98,6 +98,46 @@ jobs:
           else:
               print('Bridge01 pivot correction already present')
           PY
+      - name: Apply original MU terrain triangulation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+
+          # Original MU renders each terrain tile as a triangle fan ordered
+          # TL -> TR -> BR -> BL, i.e. the diagonal is TL -> BR.
+          # The web port used the opposite TR -> BL diagonal, which deforms
+          # steep transitions such as Lorencia's bridge/ramp terrain.
+          old_idx='inds[k++]=a;inds[k++]=c;inds[k++]=b;inds[k++]=b;inds[k++]=c;inds[k++]=d;'
+          new_idx='inds[k++]=a;inds[k++]=d;inds[k++]=b;inds[k++]=a;inds[k++]=c;inds[k++]=d;'
+          if old_idx in s:
+              s=s.replace(old_idx,new_idx,1)
+          elif new_idx not in s:
+              raise SystemExit('terrain index anchor not found')
+
+          old_h=''' const terrainHeightAt=(tx,ty)=>{\n   const x=Math.max(0,Math.min(255,Math.round(tx))),y=Math.max(0,Math.min(255,Math.round(ty)));\n   return (height.data[y*256+x]||0)*1.5+2;\n };'''
+          new_h=''' const terrainHeightAt=(tx,ty)=>{\n   const x=Math.max(0,Math.min(254.999999,tx)),y=Math.max(0,Math.min(254.999999,ty));\n   const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;\n   const h00=(height.data[iy*256+ix]||0)*1.5;\n   const h10=(height.data[iy*256+ix+1]||0)*1.5;\n   const h01=(height.data[(iy+1)*256+ix]||0)*1.5;\n   const h11=(height.data[(iy+1)*256+ix+1]||0)*1.5;\n   // Same TL->BR split used by the original MU terrain triangle fan.\n   const h=fy<=fx\n     ? h00+fx*(h10-h00)+fy*(h11-h10)\n     : h00+fx*(h11-h01)+fy*(h01-h00);\n   return h+2;\n };'''
+          if old_h in s:
+              s=s.replace(old_h,new_h,1)
+          elif 'Same TL->BR split used by the original MU terrain triangle fan.' not in s:
+              raise SystemExit('terrainHeightAt anchor not found')
+
+          p.write_text(s,encoding='utf-8')
+          print('Terrain diagonal corrected to original MU TL->BR split')
+          PY
+      - name: Validate JavaScript
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('index.html','utf8');
+          const m=s.match(/<script>([\s\S]*?)<\/script>/);
+          if(!m)throw new Error('script not found');
+          new Function(m[1]);
+          console.log('JavaScript syntax OK');
+          NODE
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload site
