@@ -472,7 +472,18 @@ async function buildLorenciaObjects(){
     if(!m.data.length||/shadow/i.test(m.texture))continue;const vao=gl.createVertexArray();gl.bindVertexArray(vao);const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,32,24);
     gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,4,gl.FLOAT,false,32,0);gl.vertexAttribDivisor(3,1);gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,32,16);gl.vertexAttribDivisor(4,1);
-    const additive=(model.toLowerCase()==="housewall02.bmd"&&m.meshIndex===4)||/(^|[_-])(light|fire|flare|glow)([_-]|\.|$)/i.test(m.texture);
+    const mn=model.toLowerCase(),mi=m.meshIndex;
+    // Exact Lorencia BlendMesh rules from the original client.
+    const additive=
+      (mn==="house03.bmd"&&mi===4)||
+      (mn==="house04.bmd"&&mi===8)||
+      (mn==="housewall02.bmd"&&mi===4)||
+      (mn==="waterspout01.bmd"&&mi===3)||
+      (mn==="streetlight01.bmd"&&mi===1)||
+      ((mn==="firelight01.bmd"||mn==="firelight02.bmd")&&mi===2)||
+      (mn==="bonfire01.bmd"&&mi===1)||
+      (mn==="candle01.bmd"&&mi===1)||
+      /(^|[_-])(light|fire|flare|glow)([_-]|\.|$)/i.test(m.texture);
     renders.push({vao,count:m.data.length/8,n:list.length,tex:await objectTexture(m.texture),additive,model,meshIndex:m.meshIndex,texture:m.texture});
    }
    instances+=list.length;
