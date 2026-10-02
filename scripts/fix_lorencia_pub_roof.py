@@ -3,6 +3,14 @@ from pathlib import Path
 p = Path('index.html')
 s = p.read_text(encoding='utf-8')
 
+# Idempotent: once the complete roof behavior is installed, do nothing.
+if ('uniform int uHideObject' in s and
+    'pubRoof,model,meshIndex' in s and
+    'const hidePubRoof=heroTile===4;' in s and
+    'gl.uniform1i(objHideObject,(hidePubRoof&&r.pubRoof)?1:0);' in s):
+    print('Lorencia pub roof behavior already installed')
+    raise SystemExit(0)
+
 # Shader: allow a complete per-render hide, used for the Lorencia pub roof.
 old = 'precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uObjTex;uniform int uBlackKey;out vec4 o;\nvoid main(){vec4 c=texture(uObjTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.12||(uBlackKey==1&&mx<.025&&mx-mn<.012))discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}'
 new = 'precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uObjTex;uniform int uBlackKey;uniform int uHideObject;out vec4 o;\nvoid main(){if(uHideObject==1)discard;vec4 c=texture(uObjTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.12||(uBlackKey==1&&mx<.025&&mx-mn<.012))discard;float d=max(dot(normalize(vN),normalize(vec3(.45,.85,.25))),0.0);o=vec4(c.rgb*(.50+.62*d),c.a);}'
@@ -30,18 +38,18 @@ elif 'pubRoof,model,meshIndex' not in s:
 # Compute MU HeroTile exactly from Terrain.map Layer1. In Lorencia HeroTile 4 is the pub interior.
 anchor = 'function frame(t){\n   resize();\n   const dt=Math.min(.05,(t-lastFrameT)/1000||0);lastFrameT=t;'
 repl = 'function frame(t){\n   resize();\n   const dt=Math.min(.05,(t-lastFrameT)/1000||0);lastFrameT=t;\n   let heroTile=-1;\n   if(playerReady&&playerScene.tilePos){\n     const hx=Math.max(0,Math.min(255,Math.floor(playerScene.tilePos[0]))),hy=Math.max(0,Math.min(255,Math.floor(playerScene.tilePos[1])));\n     heroTile=mapping.layer1[hy*256+hx];\n   }\n   const hidePubRoof=heroTile===4;'
-if anchor in s:
+if 'const hidePubRoof=heroTile===4;' not in s:
+    if anchor not in s:
+        raise SystemExit('frame anchor not found')
     s = s.replace(anchor, repl, 1)
-elif 'const hidePubRoof=heroTile===4;' not in s:
-    raise SystemExit('frame anchor not found')
 
 # Apply hide only to HouseWall05/06 while the player is on HeroTile 4.
 anchor = 'gl.uniform1i(objBlackKey,1);\n     let additiveMode=false;\n     for(const r of objectScene.renders){'
 repl = 'gl.uniform1i(objBlackKey,1);gl.uniform1i(objHideObject,0);\n     let additiveMode=false;\n     for(const r of objectScene.renders){\n       gl.uniform1i(objHideObject,(hidePubRoof&&r.pubRoof)?1:0);'
-if anchor in s:
+if 'gl.uniform1i(objHideObject,(hidePubRoof&&r.pubRoof)?1:0);' not in s:
+    if anchor not in s:
+        raise SystemExit('object render loop anchor not found')
     s = s.replace(anchor, repl, 1)
-elif 'gl.uniform1i(objHideObject,(hidePubRoof&&r.pubRoof)?1:0);' not in s:
-    raise SystemExit('object render loop anchor not found')
 
 # Never hide NPCs or the player.
 old = '// NPC/player textures contain legitimate dark clothing; never black-key them.\n     gl.uniform1i(objBlackKey,0);'
@@ -61,4 +69,3 @@ elif 'gl.uniform1i(objHideObject,0);gl.disable(gl.CULL_FACE);' not in s:
 
 p.write_text(s, encoding='utf-8')
 print('Lorencia pub roof: HouseWall05/06 now hide on HeroTile 4')
-# Trigger workflow after the workflow file exists.
