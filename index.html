@@ -271,6 +271,88 @@ function parseMuObj(raw){
  }
  return{groups,total,ver,map};
 }
+function quatNlerp(a,b,t){
+ let bx=b[0],by=b[1],bz=b[2],bw=b[3];
+ if(a[0]*bx+a[1]*by+a[2]*bz+a[3]*bw<0){bx=-bx;by=-by;bz=-bz;bw=-bw}
+ let x=a[0]+(bx-a[0])*t,y=a[1]+(by-a[1])*t,z=a[2]+(bz-a[2])*t,w=a[3]+(bw-a[3])*t,l=Math.hypot(x,y,z,w)||1;
+ return[x/l,y/l,z/l,w/l];
+}
+function skinRawMesh(m,skinWB,out=null){
+ if(!m.expanded){
+   const refs=[];
+   for(const t of m.tr){
+     const n=Math.min(Math.max(t.poly,0),4);if(n<3)continue;
+     const push=k=>{refs.push(t.vi[k],t.ni[k],t.ti[k])};
+     push(0);push(1);push(2);if(n===4){push(0);push(2);push(3)}
+   }
+   m.expanded=new Int32Array(refs);
+ }
+ const corners=m.expanded.length/3,need=corners*8;
+ if(!out||out.length!==need)out=new Float32Array(need);
+ let o=0;
+ for(let j=0;j<m.expanded.length;j+=3){
+   const vi=m.expanded[j],ni=m.expanded[j+1],ti=m.expanded[j+2],v=m.vv[vi],n=m.nnv[ni],uv=m.uv[ti]||[0,0];
+   if(!v){o+=8;continue}
+   const bv=skinWB[v.node]||{q:[0,0,0,1],p:[0,0,0]},q=bv.q,p=bv.p,px=v.v[0],py=v.v[1],pz=v.v[2];
+   let tx=2*(q[1]*pz-q[2]*py),ty=2*(q[2]*px-q[0]*pz),tz=2*(q[0]*py-q[1]*px);
+   out[o++]=px+q[3]*tx+(q[1]*tz-q[2]*ty)+p[0];
+   out[o++]=py+q[3]*ty+(q[2]*tx-q[0]*tz)+p[1];
+   out[o++]=pz+q[3]*tz+(q[0]*ty-q[1]*tx)+p[2];
+   const bn=n?(skinWB[n.node]||bv):bv,nq=bn.q,nx=n?n.v[0]:0,ny=n?n.v[1]:0,nz=n?n.v[2]:1;
+   tx=2*(nq[1]*nz-nq[2]*ny);ty=2*(nq[2]*nx-nq[0]*nz);tz=2*(nq[0]*ny-nq[1]*nx);
+   let rx=nx+nq[3]*tx+(nq[1]*tz-nq[2]*ty),ry=ny+nq[3]*ty+(nq[2]*tx-nq[0]*tz),rz=nz+nq[3]*tz+(nq[0]*ty-nq[1]*tx),nl=Math.hypot(rx,ry,rz)||1;
+   out[o++]=rx/nl;out[o++]=ry/nl;out[o++]=rz/nl;out[o++]=uv[0];out[o++]=uv[1];
+ }
+ return out;
+}
+function parsePlayerRig(raw){
+ let b=raw,ver=b[3];if(fixedStr(b,0,3)!=="BMD")throw new Error("Player BMD inválido");
+ if(ver===12){const d0=new DataView(b.buffer,b.byteOffset,b.byteLength),size=d0.getInt32(4,true),dec=muDecrypt(b.slice(8,8+size)),nb=new Uint8Array(4+dec.length);nb.set(b.slice(0,4));nb.set(dec,4);b=nb}
+ else if(ver===15)throw new Error("Player BMD v15 todavía no soportado");
+ const d=new DataView(b.buffer,b.byteOffset,b.byteLength);let p=4+32;
+ const mc=d.getUint16(p,true);p+=2;const bc=d.getUint16(p,true);p+=2;const ac=d.getUint16(p,true);p+=2;
+ for(let m=0;m<mc;m++){
+   const nv=d.getInt16(p,true),nn=d.getInt16(p+2,true),nt=d.getInt16(p+4,true),ntr=d.getInt16(p+6,true);p+=10+nv*16+nn*20+nt*8+ntr*64+32;
+ }
+ const actions=[];
+ for(let a=0;a<ac;a++){
+   const nk=d.getInt16(p,true);p+=2;const lock=b[p++]!==0;
+   if(lock)p+=nk*12;
+   actions.push({nk,lock});
+ }
+ const bones=[];
+ for(let i=0;i<bc;i++){
+   const dummy=b[p++]!==0;
+   if(dummy){bones.push({dummy:true,parent:-1,mats:[]});continue}
+   const name=fixedStr(b,p,32);p+=32;const parent=d.getInt16(p,true);p+=2,mats=[];
+   for(let a=0;a<ac;a++){
+     const nk=actions[a].nk,pos=new Array(nk),quat=new Array(nk);
+     for(let k=0;k<nk;k++,p+=12)pos[k]=[d.getFloat32(p,true),d.getFloat32(p+4,true),d.getFloat32(p+8,true)];
+     for(let k=0;k<nk;k++,p+=12)quat[k]=quatEuler([d.getFloat32(p,true),d.getFloat32(p+4,true),d.getFloat32(p+8,true)]);
+     mats.push({pos,quat});
+   }
+   bones.push({dummy:false,name,parent,mats});
+ }
+ return{actions,bones};
+}
+function samplePlayerRig(rig,actionIdx,animTime){
+ actionIdx=Math.max(0,Math.min(rig.actions.length-1,actionIdx));
+ const action=rig.actions[actionIdx],total=Math.max(action.lock?action.nk-1:action.nk,1),fp=((animTime%total)+total)%total,f0=Math.floor(fp),f1=(f0+1)%total,t=fp-f0,wb=[];
+ for(let i=0;i<rig.bones.length;i++){
+   const bone=rig.bones[i];
+   if(bone.dummy){wb.push({q:[0,0,0,1],p:[0,0,0]});continue}
+   const bm=bone.mats[actionIdx],max=Math.min(bm.pos.length,bm.quat.length)-1;
+   if(max<0){wb.push({q:[0,0,0,1],p:[0,0,0]});continue}
+   const a0=Math.min(f0,max),a1=Math.min(f1,max),tt=a0===a1?0:t,p0=bm.pos[a0],p1=bm.pos[a1],lq=quatNlerp(bm.quat[a0],bm.quat[a1],tt);
+   let lp=[p0[0]+(p1[0]-p0[0])*tt,p0[1]+(p1[1]-p0[1])*tt,p0[2]+(p1[2]-p0[2])*tt];
+   if(i===0&&action.lock&&bm.pos.length)lp=[bm.pos[0][0],bm.pos[0][1],lp[2]];
+   if(bone.parent>=0&&bone.parent<wb.length){
+     const pa=wb[bone.parent],qr=quatMul(pa.q,lq),rp=quatRot(pa.q,lp),ll=Math.hypot(...qr)||1;
+     wb.push({q:qr.map(v=>v/ll),p:[rp[0]+pa.p[0],rp[1]+pa.p[1],rp[2]+pa.p[2]]});
+   }else wb.push({q:lq,p:lp});
+ }
+ return{bones:wb,frame:fp,total};
+}
 function parseBmd(raw,externalWB=null,poseAction=0){
  let b=raw,ver=b[3];if(fixedStr(b,0,3)!=="BMD")throw new Error("BMD inválido");
  if(ver===12){const d0=new DataView(b.buffer,b.byteOffset,b.byteLength),size=d0.getInt32(4,true),dec=muDecrypt(b.slice(8,8+size)),nb=new Uint8Array(4+dec.length);nb.set(b.slice(0,4));nb.set(dec,4);b=nb}
@@ -308,9 +390,8 @@ function parseBmd(raw,externalWB=null,poseAction=0){
  }
  const meshes=[];
  for(const m of rawMeshes){
-  const a=[];const emit=k=>{const v=m.vv[k.vi],n=m.nnv[k.ni],uv=m.uv[k.ti]||[0,0];if(!v)return;const bv=skinWB[v.node]||{q:[0,0,0,1],p:[0,0,0]},r=quatRot(bv.q,v.v),pp=[r[0]+bv.p[0],r[1]+bv.p[1],r[2]+bv.p[2]],bn=n?(skinWB[n.node]||bv):bv,nr=n?quatRot(bn.q,n.v):[0,0,1],nl=Math.hypot(...nr)||1;a.push(pp[0],pp[1],pp[2],nr[0]/nl,nr[1]/nl,nr[2]/nl,uv[0],uv[1])};
-  for(const t of m.tr){const n=Math.min(Math.max(t.poly,0),4);if(n<3)continue;const q=[];for(let k=0;k<n;k++)q.push({vi:t.vi[k],ni:t.ni[k],ti:t.ti[k]});emit(q[0]);emit(q[1]);emit(q[2]);if(n===4){emit(q[0]);emit(q[2]);emit(q[3])}}
-  meshes.push({data:new Float32Array(a),texture:m.texture});
+  const data=skinRawMesh(m,skinWB);
+  meshes.push({data,texture:m.texture,raw:m});
  }
  const byName=new Map();
  for(let i=0;i<bones.length;i++){
@@ -401,47 +482,35 @@ async function buildLorenciaObjects(){
 }
 async function buildPlayer(height){
  const models=["HelmClass01.bmd","ArmorClass01.bmd","PantClass01.bmd","GloveClass01.bmd","BootClass01.bmd"];
- // Dark Wizard base body in this client is Class01. These parts share the Player.bmd skeleton.
- // Player.bmd is the authoritative shared skeleton. PlayerStopMale is action 1, frame 0.
- // LinkParentAnimation in the original client uses the parent's BoneTransform array directly by bone index.
- const parentModel=parseBmd(await getPlayerBytes("player.bmd"),null,1),parentBones=parentModel.bones;
+ const playerBytes=await getPlayerBytes("player.bmd"),rig=parsePlayerRig(playerBytes);
+ // Season 6 PlayerAction: 1=PlayerStopMale, 15=PlayerWalkMale, 25=PlayerRun.
+ const idlePose=samplePlayerRig(rig,1,0).bones;
  const spawnTileX=138,spawnTileY=124,spawnZ=(height.data[spawnTileY*256+spawnTileX]||0)*1.5+2;
  const facing=quatEuler([0,0,Math.PI*.25]);
  const idata=new Float32Array([spawnTileX*100,spawnTileY*100,spawnZ,.85,facing[0],facing[1],facing[2],facing[3]]);
  const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.DYNAMIC_DRAW);
  const renders=[];let meshesLoaded=0;
- // Draw the base Player.bmd too. It carries the character's base body/head data;
- // equipment pieces are then linked to the exact same idle skeleton.
- for(const m of parentModel){
-   if(!m.data.length||/shadow/i.test(m.texture))continue;
-   const vao=gl.createVertexArray();gl.bindVertexArray(vao);
-   const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);
-   gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);
-   gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);
-   gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,32,24);
-   gl.bindBuffer(gl.ARRAY_BUFFER,inst);
-   gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,4,gl.FLOAT,false,32,0);gl.vertexAttribDivisor(3,1);
-   gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,32,16);gl.vertexAttribDivisor(4,1);
-   renders.push({vao,count:m.data.length/8,n:1,tex:await playerTexture(m.texture)});
-   meshesLoaded++;
- }
  for(const model of models){
-   const meshes=parseBmd(await getPlayerBytes(model),parentBones,0);
+   const meshes=parseBmd(await getPlayerBytes(model),idlePose,0);
    for(const m of meshes){
      if(!m.data.length||/shadow/i.test(m.texture))continue;
      const vao=gl.createVertexArray();gl.bindVertexArray(vao);
-     const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);
+     const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.DYNAMIC_DRAW);
      gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);
      gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);
      gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,32,24);
      gl.bindBuffer(gl.ARRAY_BUFFER,inst);
      gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,4,gl.FLOAT,false,32,0);gl.vertexAttribDivisor(3,1);
      gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,32,16);gl.vertexAttribDivisor(4,1);
-     renders.push({vao,count:m.data.length/8,n:1,tex:await playerTexture(m.texture)});
+     renders.push({vao,vb,count:m.data.length/8,n:1,tex:await playerTexture(m.texture),raw:m.raw,skinData:m.data});
      meshesLoaded++;
    }
  }
- return{renders,parts:models.length+1,meshes:meshesLoaded,tile:[spawnTileX,spawnTileY],tilePos:[spawnTileX,spawnTileY],instanceBuffer:inst,instanceData:idata,facing:.25*Math.PI};
+ return{
+   renders,parts:models.length,meshes:meshesLoaded,tile:[spawnTileX,spawnTileY],tilePos:[spawnTileX,spawnTileY],
+   instanceBuffer:inst,instanceData:idata,facing:.25*Math.PI,rig,
+   animAction:1,animTime:0,animName:"IDLE",moveAmount:0
+ };
 }
 
 async function main(){
@@ -501,7 +570,7 @@ async function main(){
  statusEl.textContent="Terreno real listo · cargando árboles y edificios…";
  let objectScene={renders:[],instances:0,failed:0},playerScene={renders:[],parts:0,meshes:0,tile:[138,124]},objectsReady=false,playerReady=false;
  const refreshStatus=()=>{
-   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · PJ sin black-key · ATT/colisiones listas";
+   if(objectsReady&&playerReady)statusEl.textContent="Lorencia · "+objectScene.instances+" objetos · PJ 360° · idle/walk/run BMD · ATT/colisiones";
    else if(objectsReady)statusEl.textContent="Lorencia lista · cargando personaje original…";
    else if(playerReady)statusEl.textContent="Dark Wizard original listo · cargando objetos de Lorencia…";
  };
@@ -540,6 +609,21 @@ async function main(){
    const d=Math.min(devicePixelRatio||1,1.45),w=Math.max(1,Math.floor(innerWidth*d)),h=Math.max(1,Math.floor(innerHeight*d));
    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}
  }
+ function updatePlayerAnimation(dt){
+   if(!playerReady||!playerScene.rig)return;
+   const amount=playerScene.moveAmount||0;
+   const nextAction=amount<.08?1:(amount>.72?25:15);
+   const nextName=nextAction===1?"IDLE":nextAction===15?"WALK":"RUN";
+   if(playerScene.animAction!==nextAction){playerScene.animAction=nextAction;playerScene.animTime=0;playerScene.animName=nextName}
+   const playSpeed=nextAction===1?.28:nextAction===15?.38:.34;
+   playerScene.animTime+=dt*playSpeed*25;
+   const bones=samplePlayerRig(playerScene.rig,nextAction,playerScene.animTime).bones;
+   for(const r of playerScene.renders){
+     r.skinData=skinRawMesh(r.raw,bones,r.skinData);
+     gl.bindBuffer(gl.ARRAY_BUFFER,r.vb);
+     gl.bufferSubData(gl.ARRAY_BUFFER,0,r.skinData);
+   }
+ }
  function updatePlayerMovement(dt){
    if(!playerReady||!playerScene.instanceBuffer||!playerScene.instanceData)return;
    let moveX=joyX,moveY=-joyY;
@@ -547,18 +631,20 @@ async function main(){
    if(keys.has("KeyD")||keys.has("ArrowRight"))moveX+=1;
    if(keys.has("KeyW")||keys.has("ArrowUp"))moveY+=1;
    if(keys.has("KeyS")||keys.has("ArrowDown"))moveY-=1;
-   const ml=Math.hypot(moveX,moveY);
+   let ml=Math.hypot(moveX,moveY),amount=Math.min(1,ml);
+   playerScene.moveAmount=0;
    if(ml<.08)return;
-   if(ml>1){moveX/=ml;moveY/=ml}
+   if(ml>1){moveX/=ml;moveY/=ml;ml=1}
    // Movement is camera-relative so mobile controls remain intuitive.
    const flatYaw=camYaw,fx=Math.cos(flatYaw),fy=Math.sin(flatYaw),rx=-fy,ry=fx;
    const dx=fx*moveY+rx*moveX,dy=fy*moveY+ry*moveX;
-   const speedTiles=4.2;
+   const speedTiles=amount>.72?5.2:2.9;
    const oldX=playerScene.tilePos[0],oldY=playerScene.tilePos[1];
    let nx=oldX+dx*speedTiles*dt,ny=oldY+dy*speedTiles*dt;
    nx=Math.max(1,Math.min(254,nx));ny=Math.max(1,Math.min(254,ny));
    const flags=terrainFlagsAt(nx,ny);
    if(flags&(ATT_NOMOVE|ATT_NOGROUND))return;
+   playerScene.moveAmount=amount;
    playerScene.tilePos[0]=nx;playerScene.tilePos[1]=ny;
    const a=Math.atan2(dy,dx),q=quatEuler([0,0,a]),data=playerScene.instanceData;
    data[0]=nx*100;data[1]=ny*100;data[2]=terrainHeightAt(nx,ny);data[3]=.85;
@@ -591,7 +677,9 @@ async function main(){
  function frame(t){
    resize();
    const dt=Math.min(.05,(t-lastFrameT)/1000||0);lastFrameT=t;
+   if(playerReady&&controlModeName!=="player")playerScene.moveAmount=0;
    updateFreeCamera(dt);
+   updatePlayerAnimation(dt);
    const f=cameraForward(),eye=[camX,camY,camZ],look=[camX+f[0],camY+f[1],camZ+f[2]];
    const vp=mul(perspective(.72,canvas.width/canvas.height,.1,1800),lookAt(eye,look,[0,1,0]));
    gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,vp);gl.uniform1f(uTime,t/1000);
@@ -631,7 +719,8 @@ async function main(){
        const tx=Math.floor(playerScene.tilePos[0]),ty=Math.floor(playerScene.tilePos[1]),fl=terrainFlagsAt(tx,ty);
        cellInfo=" · "+tx+","+ty+(fl&ATT_SAFE?" SAFE":"")+(fl&ATT_NOMOVE?" BLOQ":"");
      }
-     fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos · "+(controlModeName==="player"?"MODO PJ":"CAM LIBRE")+" x"+camSpeedMul+cellInfo;
+     const animInfo=playerReady&&playerScene.animName?" · "+playerScene.animName:"";
+     fpsEl.textContent=Math.round(frames*1000/(t-lastT))+" FPS · "+objectScene.instances+" objetos · "+(controlModeName==="player"?"MODO PJ":"CAM LIBRE")+" x"+camSpeedMul+animInfo+cellInfo;
      frames=0;lastT=t
    }
    requestAnimationFrame(frame);
