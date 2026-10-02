@@ -1,13 +1,14 @@
-name: "Apply Bridge Pivot Fix"
-"on":
+name: Apply Bridge Pivot Fix
+on:
   push:
     branches:
       - main
+    paths:
+      - .github/workflows/bridge-pivot-diagnostic.yml
 permissions:
   contents: write
 jobs:
   fix:
-    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
