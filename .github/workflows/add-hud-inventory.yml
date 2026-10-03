@@ -1,0 +1,44 @@
+name: Add MU HUD Inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/add-hud-inventory.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch original Season 6 HUD and inventory
+        run: python3 scripts/add_hud_inventory.py
+      - name: Validate JavaScript and required UI assets
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('index.html','utf8');
+          const m=s.match(/<script>([\s\S]*?)<\/script>/);
+          if(!m) throw new Error('script not found');
+          new Function(m[1]);
+          for(const p of [
+            'assets/Interface/newui_menu01.OZJ','assets/Interface/newui_menu02.OZJ','assets/Interface/partCharge1/newui_menu03.OZJ',
+            'assets/Interface/newui_menu_red.OZJ','assets/Interface/newui_menu_blue.OZJ','assets/Interface/newui_menu_AG.OZJ','assets/Interface/newui_menu_SD.OZJ',
+            'assets/Interface/newui_item_back04.OZT','assets/Interface/newui_item_box.OZT','assets/Interface/newui_item_fairy.OZT','assets/Interface/newui_exit_00.OZT'
+          ]) if(!fs.existsSync(p)) throw new Error('missing '+p);
+          console.log('HUD/inventory JavaScript and assets OK');
+          NODE
+      - name: Commit HUD and inventory
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index changes'; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Add original Season 6 HUD and empty inventory"
+          git push origin HEAD:main
