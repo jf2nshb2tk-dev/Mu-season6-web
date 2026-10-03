@@ -577,26 +577,26 @@ function resizeMuInterface(){
  muInventory.style.transform="scale("+invScale+")";muInventory.style.left=Math.max(4,innerWidth-190*invScale-8)+"px";muInventory.style.top=Math.max(4,(innerHeight-429*invScale)/2)+"px";
 }
 function stopPlayerUiMovement(){
- joyX=joyY=0;if(joyKnob)joyKnob.style.transform="translate(0px,0px)";
- if(typeof playerScene!=="undefined"&&playerScene)playerScene.moveAmount=0;
+ if(joyKnob)joyKnob.style.transform="translate(0px,0px)";
+ window.dispatchEvent(new Event("mu-ui-stop-movement"));
 }
 function setInventoryOpen(v){
  inventoryOpen=!!v;
  if(inventoryOpen){
-   if(typeof closeNpcDialog==="function"&&npcDialogOpen)closeNpcDialog();
+   window.dispatchEvent(new Event("mu-ui-window-opening"));
    stopPlayerUiMovement();muInventory.classList.add("open");muInventoryBtn.classList.add("active");document.body.classList.add("mu-inventory-open");
  }else{
    muInventory.classList.remove("open");muInventoryBtn.classList.remove("active");document.body.classList.remove("mu-inventory-open");
  }
 }
-function updateMuHudUI(t=0){
+function updateMuHudUI(t=0,tilePos=null){
  if(t&&t-lastMuUiUpdate<80)return;lastMuUiUpdate=t||performance.now();
  const ratio=(v,m)=>Math.max(0,Math.min(1,m>0?v/m:0));
  const hp=ratio(playerStats.life,playerStats.lifeMax),mp=ratio(playerStats.mana,playerStats.manaMax),ag=ratio(playerStats.ag,playerStats.agMax),sd=ratio(playerStats.sd,playerStats.sdMax);
  muHpImg.style.clipPath="inset("+((1-hp)*100)+"% 0 0 0)";muMpImg.style.clipPath="inset("+((1-mp)*100)+"% 0 0 0)";muAgImg.style.clipPath="inset("+((1-ag)*100)+"% 0 0 0)";muSdImg.style.clipPath="inset("+((1-sd)*100)+"% 0 0 0)";
  muHpNum.textContent=playerStats.life;muMpNum.textContent=playerStats.mana;muAgNum.textContent=playerStats.ag;muSdNum.textContent=playerStats.sd;
  const ep=ratio(playerStats.exp,playerStats.expMax);muExpFill.style.width=(ep*640)+"px";muZen.textContent=playerStats.zen.toLocaleString("es-AR")+" Zen";
- const pos=(typeof playerReady!=="undefined"&&playerReady&&playerScene.tilePos)?Math.floor(playerScene.tilePos[0])+","+Math.floor(playerScene.tilePos[1]):"--,--";
+ const pos=tilePos?Math.floor(tilePos[0])+","+Math.floor(tilePos[1]):"--,--";
  muHudInfo.textContent="Nivel "+playerStats.level+" · EXP "+Math.floor(ep*100)+"% · "+pos;
 }
 async function initMuInterface(){
@@ -910,6 +910,8 @@ async function main(){
  }
  npcAction.addEventListener("click",e=>{e.stopPropagation();if(nearbyNpc)openNpcDialog(nearbyNpc)});
  npcClose.addEventListener("click",e=>{e.stopPropagation();closeNpcDialog()});
+ window.addEventListener("mu-ui-window-opening",()=>{if(npcDialogOpen)closeNpcDialog()});
+ window.addEventListener("mu-ui-stop-movement",()=>{joyX=joyY=0;joyPointer=-1;if(playerScene)playerScene.moveAmount=0;joyKnob.style.transform="translate(0px,0px)"});
 
 
  function cameraForward(){
@@ -966,7 +968,7 @@ async function main(){
    }
  }
  function updatePlayerMovement(dt){
-   if(npcDialogOpen||inventoryOpen)return;
+   if(npcDialogOpen||inventoryOpen){if(playerScene)playerScene.moveAmount=0;return;}
    if(!playerReady||!playerScene.instanceBuffer||!playerScene.instanceData)return;
    let moveX=joyX,moveY=-joyY;
    if(keys.has("KeyA")||keys.has("ArrowLeft"))moveX-=1;
@@ -1036,7 +1038,7 @@ async function main(){
    const f=cameraForward(),eye=[camX,camY,camZ];
    const look=controlModeName==="player"?[targetX,targetY,targetZ]:[camX+f[0],camY+f[1],camZ+f[2]];
    const vp=mul(perspective(.72,canvas.width/canvas.height,.1,1800),lookAt(eye,look,[0,1,0]));
-   currentVP=vp;updateNpcInteractionUI(vp);updateMuHudUI(t);
+   currentVP=vp;updateNpcInteractionUI(vp);updateMuHudUI(t,playerReady?playerScene.tilePos:null);
    gl.useProgram(prog);gl.uniformMatrix4fv(uMVP,false,vp);gl.uniform1f(uTime,t/1000);
    // Object rendering uses texture unit 0. Rebind every terrain texture each frame
    // so the terrain does not start sampling the last loaded Object1 texture.
