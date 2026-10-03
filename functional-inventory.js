@@ -252,9 +252,9 @@ async function muBuildHeldItemVisual(def){
 }
 function muFindRightHandIndex(playerScene){
   const bones=playerScene?.rig?.bones;if(!bones)return-1;
-  // Original MU PlayerObject links the right weapon to PLAYER_BONE_R_FINGERS = 42.
-  const MU_PLAYER_BONE_R_FINGERS=42;
-  if(bones.length>MU_PLAYER_BONE_R_FINGERS&&bones[MU_PLAYER_BONE_R_FINGERS]&&!bones[MU_PLAYER_BONE_R_FINGERS].dummy)return MU_PLAYER_BONE_R_FINGERS;
+  // Original MU player weapon attachment: right hand = bone 10, left hand = bone 15.
+  const MU_PLAYER_BONE_RIGHT_HAND=10;
+  if(bones.length>MU_PLAYER_BONE_RIGHT_HAND&&bones[MU_PLAYER_BONE_RIGHT_HAND]&&!bones[MU_PLAYER_BONE_RIGHT_HAND].dummy)return MU_PLAYER_BONE_RIGHT_HAND;
   // Fallback only for non-standard player skeletons.
   const names=bones.map((b,i)=>({i,n:(b?.name||"").toLowerCase()}));
   for(const re of [/r[ _.-]*hand/,/right[ _.-]*hand/,/hand[ _.-]*r/]){const q=names.find(x=>re.test(x.n));if(q)return q.i}
