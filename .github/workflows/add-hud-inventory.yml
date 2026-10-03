@@ -1,4 +1,4 @@
-name: Add MU HUD Inventory
+name: Tune MU HUD Mobile
 on:
   push:
     branches: [main]
@@ -13,12 +13,32 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Patch original Season 6 HUD and inventory
+      - name: Tune HUD for landscape mobile
         shell: bash
         run: |
-          python3 scripts/add_hud_inventory.py
-          python3 scripts/fix_hud_inventory_scope.py
-      - name: Validate JavaScript and required UI assets
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old='bottom:max(0px,env(safe-area-inset-bottom));width:640px;height:51px;'
+          new='bottom:0;width:640px;height:51px;'
+          if old in s:
+              s=s.replace(old,new,1)
+          elif new not in s:
+              raise SystemExit('HUD bottom rule not found')
+          old_scale='const scale=Math.max(.66,Math.min(1.5,innerWidth/640));'
+          new_scale='const scale=Math.max(.62,Math.min(1.35,innerWidth/700));'
+          if old_scale in s:
+              s=s.replace(old_scale,new_scale,1)
+          elif new_scale not in s:
+              raise SystemExit('HUD scale rule not found')
+          old_pos='muHud.style.setProperty("--mu-ui-scale",scale);muHud.style.transform="scale("+scale+")";muHud.style.left=((innerWidth-640*scale)/2)+"px";'
+          new_pos=old_pos+'muHudInfo.style.bottom=Math.ceil(51*scale+2)+"px";'
+          if old_pos in s and 'muHudInfo.style.bottom=Math.ceil(51*scale+2)+"px";' not in s:
+              s=s.replace(old_pos,new_pos,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Validate HUD tuning
         shell: bash
         run: |
           node - <<'NODE'
@@ -27,15 +47,12 @@ jobs:
           const m=s.match(/<script>([\s\S]*?)<\/script>/);
           if(!m) throw new Error('script not found');
           new Function(m[1]);
-          for(const p of [
-            'assets/Interface/newui_menu01.OZJ','assets/Interface/newui_menu02.OZJ','assets/Interface/partCharge1/newui_menu03.OZJ',
-            'assets/Interface/newui_menu_red.OZJ','assets/Interface/newui_menu_blue.OZJ','assets/Interface/newui_menu_AG.OZJ','assets/Interface/newui_menu_SD.OZJ',
-            'assets/Interface/newui_item_back04.OZT','assets/Interface/newui_item_box.OZT','assets/Interface/newui_item_fairy.OZT','assets/Interface/newui_exit_00.OZT'
-          ]) if(!fs.existsSync(p)) throw new Error('missing '+p);
-          if(!s.includes('updateMuHudUI(t,playerReady?playerScene.tilePos:null)')) throw new Error('HUD is not wired to player position');
-          console.log('HUD/inventory JavaScript, state integration and assets OK');
+          if(!s.includes('#muHud{display:none;position:fixed;z-index:8;left:0;bottom:0;')) throw new Error('HUD is not flush with bottom');
+          if(!s.includes('Math.min(1.35,innerWidth/700)')) throw new Error('HUD mobile scale not applied');
+          if(!s.includes('muHudInfo.style.bottom=Math.ceil(51*scale+2)+"px"')) throw new Error('HUD info alignment not applied');
+          console.log('Mobile HUD size and bottom alignment OK');
           NODE
-      - name: Commit HUD and inventory
+      - name: Commit tuned HUD
         shell: bash
         run: |
           if git diff --quiet -- index.html; then
@@ -44,5 +61,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Fix Season 6 HUD inventory state integration"
+          git commit -m "Make Season 6 HUD smaller and flush to bottom"
           git push origin HEAD:main
