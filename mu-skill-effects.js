@@ -8,6 +8,7 @@ const textures=new Map(),active=[],state={ready:false,failed:[],active};
 const files=['Fire01.OZJ','Fire02.OZJ','Fire03.OZJ','Flame01.OZJ','inferno.OZJ','lightning.OZJ','JointThunder01.OZJ','JointLaser01.OZJ','JointSpirit01.OZJ','energy01.OZJ','Shiny01.OZJ','Magic_Circle1.OZJ','Shockwave.OZJ','SwordEff.OZJ','snowseff01.OZJ','smoke01.OZJ','Explotion01.OZJ','flareBlue.OZJ','flareRed.OZJ'];
 const actions={6:151,10:154,12:152,14:153,15:151,16:147,18:186,19:60,20:61,21:62,22:63,23:64,24:50,26:150,27:150,28:150,30:172,40:153,41:65,42:66,43:71,47:70,48:67,51:50,52:50,53:150,55:60,56:148,57:65,59:71,60:80,61:80,62:87,63:81,64:147,65:80,66:80,77:150,78:80,214:168,215:160,216:164,217:147,218:147,219:156,220:156,221:156,222:156,223:172,224:172,225:172,230:185,235:178,236:184,237:183,260:247,261:248,262:249,263:250,264:253,265:252,266:255,267:256,268:147,269:247,270:254};
 function profile(s){
+ if(s.basic)return{mode:s.kind==="ranged"?"arrows":"slash",texture:s.kind==="ranged"?"JointLaser01.OZJ":"SwordEff.OZJ",color:[1,.85,.55],action:s.action,duration:420,impactMs:210,life:450};
  const p={mode:'projectile',texture:'energy01.OZJ',color:[.6,.7,1],action:actions[s.id]??146,duration:560,impactMs:320,life:850};
  if(/Poison|Decay|Pollution|Weakness|Enervation/.test(s.name)){p.texture='smoke01.OZJ';p.color=[.3,1,.18];p.mode='cloud'}
  else if(/Lightning|Thunder/.test(s.name)){p.texture='JointThunder01.OZJ';p.color=[.55,.75,1];p.mode='beam'}

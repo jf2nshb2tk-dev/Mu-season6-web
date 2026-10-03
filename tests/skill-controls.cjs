@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const storage=new Map(),timers=[],win=new EventTarget();let now=1000;
+const target={id:'test',alive:true,x:180,y:121,z:10,screenX:200,screenY:200};
+const c=vm.createContext({window:win,console,Event,CustomEvent,performance:{now:()=>now},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},document:{querySelector:()=>null},setTimeout:fn=>timers.push(fn),innerWidth:844,innerHeight:390,playerStats:{mana:0},updateMuHudUI:()=>{}});
+vm.runInContext(fs.readFileSync('mu-game-data.js','utf8'),c);c.MUGameData=win.MUGameData;
+win.MUWorld=c.MUWorld={ready:true,blocked:false,player:{x:180,y:120,z:10},isSafe:()=>false,pick:()=>target,cast:()=>{}};
+win.MUCombat=c.MUCombat={findScreenTarget:()=>target,monsters:new Map([['test',target]])};
+vm.runInContext(fs.readFileSync('mu-skill-effects.js','utf8').replace('init();',''),c);c.MUSkillEffects=win.MUSkillEffects;c.MUSkillEffects.ready=true;
+const code=fs.readFileSync('mu-skill-system.js','utf8');vm.runInContext(code,c);const skills=win.MUSkillSystem;
+assert.equal(skills.hotkeys.length,4);assert.equal(skills.assign(0,260),false);assert.equal(skills.assign(4,9),false);assert.equal(skills.assign(1,9),true);assert.equal(skills.hotkeys[1],9);
+assert.equal(skills.assign(0,9),true);assert.equal(new Set(skills.hotkeys).size,4);assert.equal(skills.hotkeys[0],9);
+skills.select(4);let hits=[];win.addEventListener('mu-skill-hit',e=>hits.push(e.detail));
+assert.equal(skills.useBasic(),true);assert.equal(c.playerStats.mana,0);assert.equal(skills.selected,4);timers.shift()();assert.equal(hits[0].damage,8);assert.equal(hits[0].skillId,0);
+assert.equal(skills.useBasic(),false,'basic attack must honor cooldown');now+=600;
+assert.equal(skills.useSlot(0),false,'damaging spell requires mana');c.playerStats.mana=120;assert.equal(skills.useSlot(0),true);assert.equal(c.playerStats.mana,102);
+now+=1000;win.MUSkillUI={isOpen:true};assert.equal(skills.useBasic(),false,'skills window blocks combat');win.MUSkillUI.isOpen=false;
+const saved=JSON.parse(storage.get('mu-s6-skill-hotkeys-v1'));assert.equal(saved.length,4);assert.equal(saved[0],9);
+console.log('PASS: four unique saved assignments, invalid class/slot rejection, basic zero-mana damage, cooldown, selection preservation, spell mana and dialog combat lock');
