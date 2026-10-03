@@ -37,7 +37,16 @@ jobs:
           fi
 
       - name: Patch Season 6 character window
-        run: python3 scripts/add_character_window.py
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/add_character_window.py')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace(' const grid=$("#muInventoryGrid");',' const cellUrl=await uiAssetUrl("newui_item_box.OZT"),grid=$("#muInventoryGrid");')
+          p.write_text(s,encoding='utf-8')
+          PY
+          python3 scripts/add_character_window.py
 
       - name: Validate character window
         shell: bash
