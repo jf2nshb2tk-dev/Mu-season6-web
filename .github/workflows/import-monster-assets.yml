@@ -1,0 +1,53 @@
+name: Import MU Season 6 Monster Assets
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/import-monster-assets.yml
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract original monster assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
+            -o /tmp/ClientS6.Base.rar
+          sudo apt-get update -qq
+          sudo apt-get install -y unar
+          rm -rf /tmp/mu && mkdir -p /tmp/mu
+          unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
+          ROOT="/tmp/mu/ClientS6 Base/Data"
+          SRC="$ROOT/Monster"
+          DST="assets/Monster"
+          mkdir -p "$DST"
+          if [ -d "$SRC" ]; then
+            cp -a "$SRC"/. "$DST"/
+          else
+            echo "Data/Monster not found" >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, os
+          root="assets/Monster"
+          files=[]
+          for dp,_,fs in os.walk(root):
+              for f in fs:
+                  if f=="manifest.json": continue
+                  files.append(os.path.relpath(os.path.join(dp,f),root).replace("\\","/"))
+          with open(os.path.join(root,"manifest.json"),"w",encoding="utf8") as h:
+              json.dump({"count":len(files),"files":sorted(files)},h,ensure_ascii=False,separators=(",",":"))
+          print("Imported",len(files),"monster files")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+          git add "$DST"
+          git commit -m "Import original MU Season 6 monster assets" || exit 0
+          git push origin HEAD:main
