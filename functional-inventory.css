@@ -1,0 +1,32 @@
+/* Functional MU Season 6 inventory */
+#muInventoryGrid{position:absolute!important}
+.muInvCell{position:relative;z-index:1}
+#muEquipmentLayer{position:absolute;inset:0;z-index:4;pointer-events:none}
+.muEquipDrop{position:absolute;box-sizing:border-box;pointer-events:auto;touch-action:none;border:1px solid transparent;border-radius:3px}
+.muEquipDrop.muDropReady{border-color:#c9a94b88;box-shadow:inset 0 0 8px #d2ae4255}
+#muDropHelper{left:15px;top:44px;width:46px;height:46px}
+#muDropHelm{left:75px;top:44px;width:46px;height:46px}
+#muDropWing{left:120px;top:44px;width:61px;height:46px}
+#muDropWeaponR{left:15px;top:87px;width:46px;height:66px}
+#muDropArmor{left:75px;top:87px;width:46px;height:66px}
+#muDropWeaponL{left:135px;top:87px;width:46px;height:66px}
+#muDropGloves{left:15px;top:150px;width:46px;height:46px}
+#muDropPants{left:75px;top:150px;width:46px;height:46px}
+#muDropBoots{left:135px;top:150px;width:46px;height:46px}
+#muDropAmulet{left:54px;top:87px;width:28px;height:28px;z-index:3}
+#muDropRingR{left:54px;top:150px;width:28px;height:28px;z-index:3}
+#muDropRingL{left:114px;top:150px;width:28px;height:28px;z-index:3}
+.muInvItem{position:absolute;z-index:6;box-sizing:border-box;background-repeat:no-repeat;background-position:center;background-size:contain;filter:drop-shadow(0 1px 2px #000);touch-action:none;pointer-events:auto;border:1px solid transparent;border-radius:2px}
+.muInvItem:hover,.muInvItem.muSelected{border-color:#e8c65b;box-shadow:inset 0 0 5px #f0c94a88,0 0 4px #000}
+.muInvItem.muDragging{opacity:.38}
+.muInvQty{position:absolute;right:1px;bottom:0;color:#fff4bd;font:bold 8px/1 Arial;text-shadow:1px 1px 2px #000,-1px -1px 1px #000;pointer-events:none}
+.muEquipDrop .muInvItem{left:2px!important;top:2px!important;width:calc(100% - 4px)!important;height:calc(100% - 4px)!important}
+#muItemTooltip{display:none;position:fixed;z-index:40;min-width:132px;max-width:180px;padding:7px 8px;background:linear-gradient(#14120ef5,#030303f8);border:1px solid #927b42;border-radius:5px;box-shadow:0 4px 16px #000d;color:#d7d1c2;font:9px/1.35 Arial,sans-serif;pointer-events:none;text-shadow:1px 1px 1px #000}
+#muItemTooltip.open{display:block}
+#muItemTooltip .muTipName{color:#f3d875;font-weight:700;text-align:center;margin-bottom:4px}
+#muItemTooltip .muTipBlue{color:#78b8ff}
+#muItemTooltip .muTipGreen{color:#79e28c}
+#muItemTooltip .muTipReq{color:#c8b997}
+#muItemTooltip .muTipHint{color:#88806d;margin-top:4px;border-top:1px solid #4e432d;padding-top:3px}
+#muInventoryNotice{position:absolute;left:18px;top:181px;width:154px;height:14px;color:#cfb66f;font:bold 8px/14px Arial;text-align:center;text-shadow:1px 1px 2px #000;pointer-events:none;z-index:8;white-space:nowrap;overflow:hidden}
+.muDragGhost{position:fixed;z-index:50;width:42px;height:58px;transform:translate(-50%,-50%);background-repeat:no-repeat;background-position:center;background-size:contain;pointer-events:none;filter:drop-shadow(0 3px 4px #000);opacity:.9}
