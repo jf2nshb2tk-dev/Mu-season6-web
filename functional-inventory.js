@@ -31,9 +31,9 @@ function muCompileIconProgram(g,vs,fs){
   const p=g.createProgram();g.attachShader(p,sh(g.VERTEX_SHADER,vs));g.attachShader(p,sh(g.FRAGMENT_SHADER,fs));g.linkProgram(p);
   if(!g.getProgramParameter(p,g.LINK_STATUS))throw new Error(g.getProgramInfoLog(p));return p;
 }
-let muIconGLState=null;
+// Each inventory icon gets its own offscreen WebGL canvas.
+// Sharing one async canvas caused Staff/Bless/Soul to capture another item's frame.
 function muGetIconGL(){
-  if(muIconGLState)return muIconGLState;
   const canvas=document.createElement("canvas");canvas.width=canvas.height=96;
   const g=canvas.getContext("webgl2",{alpha:true,antialias:true,preserveDrawingBuffer:true,premultipliedAlpha:false});
   if(!g)throw new Error("WebGL2 icon renderer no disponible");
@@ -47,8 +47,7 @@ void main(){vec3 p=qr(uQ,aPos)-uCenter;p*=uScale;vN=normalize(qr(uQ,aN));vUV=aUV
 precision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uTex;out vec4 o;
 void main(){vec4 c=texture(uTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.08||(mx<.025&&mx-mn<.015))discard;float d=.60+.55*max(dot(normalize(vN),normalize(vec3(.4,.65,.8))),0.0);o=vec4(c.rgb*d,c.a);}`;
   const prog=muCompileIconProgram(g,vs,fs);
-  muIconGLState={canvas,g,prog,uQ:g.getUniformLocation(prog,"uQ"),uCenter:g.getUniformLocation(prog,"uCenter"),uScale:g.getUniformLocation(prog,"uScale"),uTex:g.getUniformLocation(prog,"uTex")};
-  return muIconGLState;
+  return {canvas,g,prog,uQ:g.getUniformLocation(prog,"uQ"),uCenter:g.getUniformLocation(prog,"uCenter"),uScale:g.getUniformLocation(prog,"uScale"),uTex:g.getUniformLocation(prog,"uTex")};
 }
 async function muItemIconUrl(def){
   if(muItemIconCache.has(def.id))return muItemIconCache.get(def.id);
