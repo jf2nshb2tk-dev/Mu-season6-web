@@ -1,0 +1,47 @@
+name: Inspect original MU item assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/list-client-items.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download and inspect Data Item
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            'https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar' \
+            -o /tmp/ClientS6.Base.rar
+          sudo apt-get update -qq
+          sudo apt-get install -y unar >/dev/null
+          rm -rf /tmp/mu && mkdir -p /tmp/mu
+          unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
+          ROOT='/tmp/mu/ClientS6 Base/Data'
+          {
+            echo '# Data/Item'
+            find "$ROOT/Item" -maxdepth 1 -type f -printf '%f\n' | sort -f
+            echo
+            echo '# Interface item-related'
+            find "$ROOT/Interface" -maxdepth 1 -type f \( -iname '*item*' -o -iname '*potion*' -o -iname '*inventory*' \) -printf '%f\n' | sort -f
+            echo
+            echo '# Local names around staffs/potions/wings'
+            find "$ROOT" -maxdepth 2 -type f \( -iname '*staff*' -o -iname '*potion*' -o -iname '*wing*' -o -iname '*scroll*' -o -iname '*orb*' \) -printf '%P\n' | sort -f
+          } > client-item-manifest.txt
+      - name: Commit manifest
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add client-item-manifest.txt
+          git commit -m 'Add original client item manifest'
+          git push origin HEAD:main
