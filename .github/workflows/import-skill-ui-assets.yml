@@ -1,0 +1,41 @@
+name: Import MU Season 6 Skill UI Assets
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/import-skill-ui-assets.yml
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract original skill interface assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
+            -o /tmp/ClientS6.Base.rar
+          sudo apt-get update -qq
+          sudo apt-get install -y unar
+          rm -rf /tmp/mu && mkdir -p /tmp/mu
+          unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
+          SRC="/tmp/mu/ClientS6 Base/Data/Interface"
+          DST="assets/Interface"
+          mkdir -p "$DST"
+          count=0
+          while IFS= read -r -d '' f; do
+            cp "$f" "$DST/$(basename "$f")"
+            count=$((count+1))
+          done < <(find "$SRC" -maxdepth 1 -type f \( -iname 'newui_skill*' -o -iname '*skillbox*' -o -iname '*skillselection*' -o -iname '*skillcommand*' \) -print0)
+          echo "Imported $count original skill UI files"
+          test "$count" -gt 0
+          git config user.name "github-actions[bot]"
+          git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+          git add "$DST"
+          git commit -m "Import original MU Season 6 skill interface assets" || exit 0
+          git push origin HEAD:main
