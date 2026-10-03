@@ -252,8 +252,8 @@ async function muBuildHeldItemVisual(def){
 }
 function muFindRightHandIndex(playerScene){
   const bones=playerScene?.rig?.bones;if(!bones)return-1;
-  // Original MU player weapon attachment: right hand = bone 10, left hand = bone 15.
-  const MU_PLAYER_BONE_RIGHT_HAND=10;
+  // Original MU Player.bmd socket: right-hand item uses bone 33 (knife_gdf).
+  const MU_PLAYER_BONE_RIGHT_HAND=33;
   if(bones.length>MU_PLAYER_BONE_RIGHT_HAND&&bones[MU_PLAYER_BONE_RIGHT_HAND]&&!bones[MU_PLAYER_BONE_RIGHT_HAND].dummy)return MU_PLAYER_BONE_RIGHT_HAND;
   // Fallback only for non-standard player skeletons.
   const names=bones.map((b,i)=>({i,n:(b?.name||"").toLowerCase()}));
@@ -271,7 +271,8 @@ function muEquipmentVisualTick(playerScene){
   }
   if(!muHeldItemScene.instanceBuffer||muHeldItemScene.handIndex<0||!playerScene.currentBones||!playerScene.instanceData)return;
   const hand=playerScene.currentBones[muHeldItemScene.handIndex];if(!hand)return;const pd=playerScene.instanceData,pq=[pd[4],pd[5],pd[6],pd[7]],ps=pd[3];
-  const hp=[hand.p[0]*ps,hand.p[1]*ps,hand.p[2]*ps],rp=quatRot(pq,hp),pos=[pd[0]+rp[0],pd[1]+rp[1],pd[2]+rp[2]],q=quatMul(pq,hand.q),d=muHeldItemScene.instanceData;
+  // Original RenderLinkObject mounts player weapons at local (0,0,15) on the hand socket.
+  const grip=quatRot(hand.q,[0,0,15]),hp=[(hand.p[0]+grip[0])*ps,(hand.p[1]+grip[1])*ps,(hand.p[2]+grip[2])*ps],rp=quatRot(pq,hp),pos=[pd[0]+rp[0],pd[1]+rp[1],pd[2]+rp[2]],q=quatMul(pq,hand.q),d=muHeldItemScene.instanceData;
   d[0]=pos[0];d[1]=pos[1];d[2]=pos[2];d[3]=ps;d[4]=q[0];d[5]=q[1];d[6]=q[2];d[7]=q[3];gl.bindBuffer(gl.ARRAY_BUFFER,muHeldItemScene.instanceBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,d);
 }
 function muDrawHeldItem(){
