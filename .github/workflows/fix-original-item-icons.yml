@@ -1,0 +1,72 @@
+name: Fix original MU item icons
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-original-item-icons.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fix isolated item icon rendering
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p=Path('functional-inventory.js')
+          s=p.read_text(encoding='utf-8')
+
+          old='''let muIconGLState=null;\nfunction muGetIconGL(){\n  if(muIconGLState)return muIconGLState;\n  const canvas=document.createElement("canvas");canvas.width=canvas.height=96;'''
+          new='''// Each inventory icon gets its own offscreen WebGL canvas.\n// Sharing one async canvas caused Staff/Bless/Soul to capture another item's frame.\nfunction muGetIconGL(){\n  const canvas=document.createElement("canvas");canvas.width=canvas.height=96;'''
+          if old not in s:
+              raise SystemExit('icon renderer anchor not found')
+          s=s.replace(old,new,1)
+
+          old2='''  muIconGLState={canvas,g,prog,uQ:g.getUniformLocation(prog,"uQ"),uCenter:g.getUniformLocation(prog,"uCenter"),uScale:g.getUniformLocation(prog,"uScale"),uTex:g.getUniformLocation(prog,"uTex")};\n  return muIconGLState;'''
+          new2='''  return {canvas,g,prog,uQ:g.getUniformLocation(prog,"uQ"),uCenter:g.getUniformLocation(prog,"uCenter"),uScale:g.getUniformLocation(prog,"uScale"),uTex:g.getUniformLocation(prog,"uTex")};'''
+          if old2 not in s:
+              raise SystemExit('icon renderer return anchor not found')
+          s=s.replace(old2,new2,1)
+          p.write_text(s,encoding='utf-8')
+
+          q=Path('index.html')
+          h=q.read_text(encoding='utf-8')
+          if 'functional-inventory.js?v=1' in h:
+              h=h.replace('functional-inventory.js?v=1','functional-inventory.js?v=2',1)
+          elif 'functional-inventory.js?v=2' not in h:
+              raise SystemExit('inventory script version anchor not found')
+          q.write_text(h,encoding='utf-8')
+          PY
+
+      - name: Validate scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check functional-inventory.js
+          grep -q 'functional-inventory.js?v=2' index.html
+          grep -q 'Each inventory icon gets its own offscreen WebGL canvas' functional-inventory.js
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add functional-inventory.js index.html
+          if git diff --cached --quiet; then
+            echo 'Nothing to commit'
+            exit 0
+          fi
+          git commit -m 'Fix original item icon renderer isolation'
+          git push origin HEAD:main
