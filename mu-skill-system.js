@@ -23,21 +23,26 @@ function select(id,arm=false){
 }
 function assign(slot,id){slot=Math.max(0,Math.min(4,slot|0));id=Number(id);if(!skill(id))return false;hotkeys[slot]=id;save();window.dispatchEvent(new Event("mu-skill-hotkeys"));return true}
 function cooldownLeft(id){return Math.max(0,(cooldowns.get(Number(id))||0)-performance.now())}
-function canCast(s){if(!s)return"No skill";if(cooldownLeft(s.id)>0)return"Cooldown";if(playerStats.mana<s.mana)return"Sin mana";return""}
+let castingUntil=0;
+function canCast(s){if(!s)return"No skill";if(!window.MUWorld?.ready||!window.MUSkillEffects?.ready)return"Cargando poderes";if(MUWorld.blocked)return"Cerrá la ventana para usar el poder";if(performance.now()<castingUntil)return"Lanzando poder";const p=MUWorld.player;if(s.damage>0&&MUWorld.isSafe(p.x,p.y))return"Zona segura: salí de Lorencia para atacar";if(cooldownLeft(s.id)>0)return"Cooldown";if(playerStats.mana<s.mana)return"Sin mana";return""}
 function castAt(clientX,clientY,source="mouse"){
  const s=skill(selected);const reason=canCast(s);if(reason){window.dispatchEvent(new CustomEvent("mu-skill-error",{detail:{reason,skill:s}}));return false}
- const now=performance.now(),castId=++castSeq;
- playerStats.mana=Math.max(0,playerStats.mana-s.mana);cooldowns.set(s.id,now+s.cooldown);
+ const from={...MUWorld.player},target=window.MUCombat?.findScreenTarget(clientX,clientY,95)||null;
+ const to=s.damage===0?{...from}:target?{x:target.x,y:target.y,z:target.z}:MUWorld.pick(clientX,clientY);
+ const range=["melee","combo"].includes(s.kind)?4:22;
+ const invalid=!to?"Apuntá al terreno":s.damage>0&&MUWorld.isSafe(to.x,to.y)?"El objetivo está en zona segura":Math.hypot(to.x-from.x,to.y-from.y)>range?"Objetivo fuera de alcance":"";
+ if(invalid){window.dispatchEvent(new CustomEvent("mu-skill-error",{detail:{reason:invalid,skill:s}}));return false}
+ const now=performance.now(),castId=++castSeq,profile=MUSkillEffects.profile(s);
+ playerStats.mana=Math.max(0,playerStats.mana-s.mana);cooldowns.set(s.id,now+s.cooldown);castingUntil=now+profile.duration;
  try{updateMuHudUI()}catch(_){}
- const target=window.MUCombat?.findScreenTarget(clientX,clientY,95)||null;
- const detail={castId,skillId:s.id,skill:s,source,screenX:clientX,screenY:clientY,targetId:target?.id||null,timestamp:now};
+ const detail={castId,skillId:s.id,skill:s,source,screenX:clientX,screenY:clientY,targetId:target?.id||null,timestamp:now,from,to,action:profile.action,duration:profile.duration,impactMs:profile.impactMs};
+ MUWorld.cast(detail);
  window.dispatchEvent(new CustomEvent("mu-skill-cast",{detail}));
  window.dispatchEvent(new CustomEvent("mu-skill-effect",{detail}));
- const delay=["melee","combo"].includes(s.kind)?80:["area","magic","ranged","curse"].includes(s.kind)?180:80;
  setTimeout(()=>{
-   if(s.damage>0)window.dispatchEvent(new CustomEvent("mu-skill-hit",{detail:{...detail,damage:s.damage,radius:s.kind==="area"?105:70}}));
+   if(s.damage>0)window.dispatchEvent(new CustomEvent("mu-skill-hit",{detail:{...detail,damage:s.damage,radius:s.kind==="area"?3.2:1.5}}));
    else window.dispatchEvent(new CustomEvent("mu-skill-support",{detail}));
- },delay);
+ },profile.impactMs);
  mobileArmed=false;window.dispatchEvent(new CustomEvent("mu-skill-select",{detail:{skill:s,skillId:s.id,mobileArmed}}));return true;
 }
 function cancel(){mobileArmed=false;window.dispatchEvent(new CustomEvent("mu-skill-select",{detail:{skill:skill(selected),skillId:selected,mobileArmed}}))}

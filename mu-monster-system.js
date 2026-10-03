@@ -5,10 +5,10 @@ if(window.MUMonsters)return;
 const MONSTER_DIR="assets/Monster/";
 const state={assetsReady:false,ready:false,manifest:null,groups:[],active:new Map(),failed:[],lastFrame:performance.now()};
 const modelDefs=[
- {key:"bull",name:"Bull Fighter",model:"Monster01.bmd",hp:95,scale:.86,spawns:[[141.5,120.5],[145.2,126.2]]},
- {key:"hound",name:"Hound",model:"Monster02.bmd",hp:75,scale:.84,spawns:[[143.8,123.0],[140.0,128.2]]},
- {key:"budge",name:"Budge Dragon",model:"Monster03.bmd",hp:120,scale:.82,spawns:[[146.0,121.0]]},
- {key:"spider",name:"Spider",model:"Monster10.bmd",hp:55,scale:.82,spawns:[[137.2,119.0],[145.5,129.0]]}
+ {key:"bull",name:"Bull Fighter",model:"Monster01.bmd",hp:95,scale:.86,spawns:[[180.5,120.5],[183.5,126.5]]},
+ {key:"hound",name:"Hound",model:"Monster02.bmd",hp:75,scale:.84,spawns:[[178.5,123.5],[180.5,130.5]]},
+ {key:"budge",name:"Budge Dragon",model:"Monster03.bmd",hp:120,scale:.82,spawns:[[185.5,122.5]]},
+ {key:"spider",name:"Spider",model:"Monster10.bmd",hp:55,scale:.82,spawns:[[177.5,119.5],[177.5,133.5]]}
 ];
 const texCache=new Map();
 let lowerFiles=new Map(),heightMap=null,overlay=null,ctx=null,damagePops=[];
@@ -63,7 +63,7 @@ async function buildGroup(def){
  try{rig=parsePlayerRig(raw);if(rig.actions.length)bones=samplePlayerRig(rig,0,0).bones}catch(e){console.warn("Monster rig",def.model,e)}
  const meshes=parseBmd(raw,bones,0),mobs=[];
  for(let i=0;i<def.spawns.length;i++){
-   const [x,y]=def.spawns[i],m=MUCombat.registerMonster({id:def.key+"-"+(i+1),name:def.name,hp:def.hp,maxHp:def.hp,hitRadius:52,x,y,z:terrainHeightAt(x,y),spawnX:x,spawnY:y,scale:def.scale,respawnAt:0});
+   const [x,y]=MUWorld.findSpawn(...def.spawns[i]),m=MUCombat.registerMonster({id:def.key+"-"+(i+1),name:def.name,hp:def.hp,maxHp:def.hp,hitRadius:52,x,y,z:terrainHeightAt(x,y),spawnX:x,spawnY:y,scale:def.scale,respawnAt:0});
    m.model=def.model;mobs.push(m);state.active.set(m.id,m);
  }
  const idata=new Float32Array(mobs.length*8),inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.DYNAMIC_DRAW);
@@ -81,6 +81,7 @@ function updateGroup(g,dt,now){
  }
  let o=0;
  for(const m of g.mobs){
+   if(!MUWorld.canSpawn(m.x,m.y)){const p=MUWorld.findSpawn(m.spawnX,m.spawnY);m.x=m.spawnX=p[0];m.y=m.spawnY=p[1];m.z=terrainHeightAt(m.x,m.y)}
    if(!m.alive&&m.respawnAt&&now>=m.respawnAt){m.hp=m.maxHp;m.alive=true;m.respawnAt=0;m.x=m.spawnX;m.y=m.spawnY;m.z=terrainHeightAt(m.x,m.y)}
    const q=quatEuler([0,0,Math.PI*.75]);
    g.instanceData[o++]=m.x*100;g.instanceData[o++]=m.y*100;g.instanceData[o++]=m.z;g.instanceData[o++]=m.alive?m.scale:0;
@@ -117,12 +118,7 @@ async function init(){
 window.addEventListener("mu-monster-damage",e=>{const m=e.detail?.monster;if(!m||!Number.isFinite(m.screenX))return;damagePops.push({x:m.screenX,y:m.screenY-22,damage:e.detail.damage,born:performance.now()})});
 window.addEventListener("mu-monster-dead",e=>{const m=e.detail?.monster;if(m)m.respawnAt=performance.now()+6500});
 
-// The game loop lives inside main(), so hook only its named RAF callback without touching movement/camera code.
-const nativeRAF=window.requestAnimationFrame.bind(window);
-window.requestAnimationFrame=function(cb){
- if(typeof cb==="function"&&cb.name==="frame")return nativeRAF(t=>{cb(t);if(state.ready){let vp=null;try{vp=gl.getUniform(objProg,objVP)}catch(_){}if(vp)draw(vp,t)}});
- return nativeRAF(cb);
-};
+state.draw=draw;
 window.MUMonsters=state;
-init();
+if(window.MUWorld?.ready)init();else window.addEventListener("mu-world-ready",init,{once:true});
 })();

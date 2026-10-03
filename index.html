@@ -1022,6 +1022,40 @@ async function main(){
  const ATT_SAFE=0x01,ATT_NOMOVE=0x04,ATT_NOGROUND=0x08;
  const NPC_INTERACT_RANGE=4.2;
  let nearbyNpc=null,selectedNpc=null,npcDialogOpen=false,currentVP=null;
+ let casting=null;
+ function pickSkillGround(sx,sy){
+   if(!currentVP)return null;
+   // Invert the current view-projection; unproject the pointer into a terrain ray.
+   const rows=Array.from({length:4},(_,r)=>Array.from({length:8},(_,c)=>c<4?currentVP[c*4+r]:(c-4===r?1:0)));
+   for(let c=0;c<4;c++){
+     let pivot=c;for(let r=c+1;r<4;r++)if(Math.abs(rows[r][c])>Math.abs(rows[pivot][c]))pivot=r;
+     if(Math.abs(rows[pivot][c])<1e-10)return null;
+     [rows[c],rows[pivot]]=[rows[pivot],rows[c]];const div=rows[c][c];rows[c]=rows[c].map(v=>v/div);
+     for(let r=0;r<4;r++)if(r!==c){const n=rows[r][c];rows[r]=rows[r].map((v,i)=>v-n*rows[c][i])}
+   }
+   const nx=sx/innerWidth*2-1,ny=1-sy/innerHeight*2;
+   const unproject=z=>{const v=[nx,ny,z,1],p=rows.map(row=>v.reduce((n,a,i)=>n+a*row[i+4],0));return p.slice(0,3).map(a=>a/p[3])};
+   const a=unproject(-1),b=unproject(1),d=b.map((v,i)=>v-a[i]),len=Math.hypot(...d);for(let i=0;i<3;i++)d[i]/=len;
+   const point=t=>{const x=(a[0]+d[0]*t)/2.5+127.5,y=(a[2]+d[2]*t)/2.5+127.5;return{x,y,z:terrainHeightAt(x,y),h:a[1]+d[1]*t}};
+   let previous=0;
+   for(let t=0;t<1800;t+=.5){const p=point(t);if(p.x<1||p.y<1||p.x>=255||p.y>=255)continue;
+     if(p.h<=p.z*.025){let lo=previous,hi=t;for(let i=0;i<12;i++){const mid=(lo+hi)/2,q=point(mid);if(q.h>q.z*.025)lo=mid;else hi=mid}const q=point(hi);return{x:q.x,y:q.y,z:q.z}}
+     previous=t;
+   }return null;
+ }
+ window.MUWorld.configure(terrainAtt.flags,{
+   player:()=>playerReady?{x:playerScene.tilePos[0],y:playerScene.tilePos[1],z:terrainHeightAt(...playerScene.tilePos),facing:playerScene.facing}:null,
+   blocked:()=>npcDialogOpen||inventoryOpen||characterOpen,
+   heightAt:terrainHeightAt,pick:pickSkillGround,
+   cast:detail=>{
+     if(!playerReady)return;
+     const action=detail.action,clip=playerScene.rig.actions[action];
+     if(clip){casting={action,until:detail.timestamp+detail.duration,duration:detail.duration};playerScene.animAction=action;playerScene.animTime=0;playerScene.animName=detail.skill.name}
+     const dx=detail.to.x-playerScene.tilePos[0],dy=detail.to.y-playerScene.tilePos[1];
+     if(Math.hypot(dx,dy)>.01){const a=Math.atan2(dy,dx)+Math.PI*.5,q=quatEuler([0,0,a]);playerScene.facing=a;playerScene.instanceData.set(q,4);gl.bindBuffer(gl.ARRAY_BUFFER,playerScene.instanceBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,playerScene.instanceData)}
+     playerScene.moveAmount=0;
+   }
+ });
  function npcShortName(n){return (n?.name||"NPC").split(" the ")[0]}
  function npcRole(n){
    if(!n)return"";
@@ -1143,11 +1177,13 @@ async function main(){
  function updatePlayerAnimation(dt){
    if(!playerReady||!playerScene.rig)return;
    const amount=playerScene.moveAmount||0;
-   const nextAction=amount<.08?1:(amount>.72?25:15);
-   const nextName=nextAction===1?"IDLE":nextAction===15?"WALK":"RUN";
+   if(casting&&performance.now()>=casting.until)casting=null;
+   const nextAction=casting?casting.action:(amount<.08?1:(amount>.72?25:15));
+   const nextName=casting?playerScene.animName:nextAction===1?"IDLE":nextAction===15?"WALK":"RUN";
    if(playerScene.animAction!==nextAction){playerScene.animAction=nextAction;playerScene.animTime=0;playerScene.animName=nextName}
    const playSpeed=nextAction===1?.28:nextAction===15?.38:.34;
-   playerScene.animTime+=dt*playSpeed*25;
+   if(casting){const clip=playerScene.rig.actions[nextAction],last=Math.max(0,(clip.lock?clip.nk-1:clip.nk)-1);playerScene.animTime=Math.min(last,Math.max(0,1-(casting.until-performance.now())/casting.duration)*last)}
+   else playerScene.animTime+=dt*playSpeed*25;
    const bones=samplePlayerRig(playerScene.rig,nextAction,playerScene.animTime).bones;
    playerScene.currentBones=bones;
    for(const r of playerScene.renders){
@@ -1157,7 +1193,7 @@ async function main(){
    }
  }
  function updatePlayerMovement(dt){
-   if(npcDialogOpen||inventoryOpen||characterOpen){if(playerScene)playerScene.moveAmount=0;return;}
+   if(npcDialogOpen||inventoryOpen||characterOpen||(casting&&performance.now()<casting.until)){if(playerScene)playerScene.moveAmount=0;return;}
    if(!playerReady||!playerScene.instanceBuffer||!playerScene.instanceData)return;
    let moveX=joyX,moveY=-joyY;
    if(keys.has("KeyA")||keys.has("ArrowLeft"))moveX-=1;
@@ -1283,6 +1319,9 @@ async function main(){
      gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
    }
 
+   window.MUMonsters?.draw(vp,t);
+   window.MUSkillEffects?.draw(vp,t,eye,look);
+
    frames++;if(t-lastT>750){
      let cellInfo="";
      if(playerReady&&playerScene.tilePos){
@@ -1400,7 +1439,7 @@ async function main(){
  requestAnimationFrame(frame);
 }
 </script>
-<script src="functional-inventory.js?v=2"></script>
+<script src="functional-inventory.js?v=city-fx1"></script>
 <script>
 initMuInterface().catch(e=>console.warn("MU Interface",e));
 main().catch(fail);

@@ -19,7 +19,7 @@ function findScreenTarget(x,y,radius=80){
  return best;
 }
 function damage(id,amount,meta={}){
- const m=monsters.get(id);if(!m||!m.alive)return 0;
+ const m=monsters.get(id);if(!m||!m.alive||window.MUWorld?.isSafe(m.x,m.y))return 0;
  const raw=Math.max(0,Number(amount)||0),dealt=Math.max(1,Math.round(raw-(m.defense||0)*.18));
  m.hp=Math.max(0,m.hp-dealt);m.alive=m.hp>0;
  window.dispatchEvent(new CustomEvent("mu-monster-damage",{detail:{monster:m,damage:dealt,...meta}}));
@@ -27,9 +27,10 @@ function damage(id,amount,meta={}){
  return dealt;
 }
 window.addEventListener("mu-skill-hit",e=>{
- const d=e.detail||{};let target=d.targetId?monsters.get(d.targetId):null;
- if(!target&&Number.isFinite(d.screenX)&&Number.isFinite(d.screenY))target=findScreenTarget(d.screenX,d.screenY,d.radius||80);
- if(target)damage(target.id,d.damage||1,{skillId:d.skillId,castId:d.castId});
+ const d=e.detail||{};
+ if(!d.to||!d.from||MUWorld.isSafe(d.from.x,d.from.y)||MUWorld.isSafe(d.to.x,d.to.y))return;
+ const targets=d.skill?.kind==="area"?[...monsters.values()].filter(m=>m.alive&&Math.hypot(m.x-d.to.x,m.y-d.to.y)<=d.radius):[monsters.get(d.targetId)].filter(Boolean);
+ for(const target of targets)if(Math.hypot(target.x-d.to.x,target.y-d.to.y)<=d.radius)damage(target.id,d.damage||1,{skillId:d.skillId,castId:d.castId});
 });
 window.MUCombat={monsters,registerMonster,removeMonster,findScreenTarget,damage,clear(){for(const id of [...monsters.keys()])removeMonster(id)}};
 })();
