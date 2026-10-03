@@ -1,5 +1,6 @@
 name: Add functional MU inventory
 
+# Triggered once to import the original Season 6 item assets and integrate the functional inventory.
 on:
   push:
     branches: [main]
