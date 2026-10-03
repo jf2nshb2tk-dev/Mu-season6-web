@@ -1,3 +1,4 @@
+# Mobile HUD tuning is already applied in index.html; this workflow keeps the check reproducible.
 name: Tune MU HUD Mobile
 on:
   push:
