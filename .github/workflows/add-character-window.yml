@@ -1,0 +1,71 @@
+name: Add MU Character Window
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/add-character-window.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Import original character UI assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p assets/Interface
+          if [ ! -f assets/Interface/newui_cha_textbox02.OZT ] || [ ! -f assets/Interface/newui_chainfo_btn_level.OZT ]; then
+            curl --fail --location --retry 3 \
+              "https://github.com/jf2nshb2tk-dev/reino-de-ceniza/releases/download/Mu-client-s6/ClientS6.Base.rar" \
+              -o /tmp/ClientS6.Base.rar
+            sudo apt-get update -qq
+            sudo apt-get install -y unar
+            rm -rf /tmp/mu && mkdir -p /tmp/mu
+            unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
+            SRC="/tmp/mu/ClientS6 Base/Data/Interface"
+            textbox=$(find "$SRC" -maxdepth 1 -type f -iname 'newui_cha_textbox02.ozt' -print -quit)
+            plus=$(find "$SRC" -maxdepth 1 -type f -iname 'newui_chainfo_btn_level.ozt' -print -quit)
+            test -n "$textbox" || { echo 'Missing original newui_cha_textbox02.OZT'; exit 1; }
+            test -n "$plus" || { echo 'Missing original newui_chainfo_btn_level.OZT'; exit 1; }
+            cp "$textbox" assets/Interface/newui_cha_textbox02.OZT
+            cp "$plus" assets/Interface/newui_chainfo_btn_level.OZT
+          fi
+
+      - name: Patch Season 6 character window
+        run: python3 scripts/add_character_window.py
+
+      - name: Validate character window
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('index.html','utf8');
+          const m=s.match(/<script>([\s\S]*?)<\/script>/);
+          if(!m) throw new Error('script not found');
+          new Function(m[1]);
+          for(const q of [
+            'id="muCharacter"','function setCharacterOpen(v)','function updateMuCharacterUI()',
+            'KeyC','npcDialogOpen||inventoryOpen||characterOpen',
+            'newui_cha_textbox02.OZT','newui_chainfo_btn_level.OZT'
+          ]) if(!s.includes(q)) throw new Error('missing '+q);
+          for(const p of ['assets/Interface/newui_cha_textbox02.OZT','assets/Interface/newui_chainfo_btn_level.OZT'])
+            if(!fs.existsSync(p)) throw new Error('missing '+p);
+          console.log('Character window JS and original MU assets OK');
+          NODE
+
+      - name: Commit character window
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html assets/Interface; then
+            echo 'No changes needed'; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html assets/Interface/newui_cha_textbox02.OZT assets/Interface/newui_chainfo_btn_level.OZT
+          git commit -m 'Add Season 6 character stats window'
+          git push origin HEAD:main
