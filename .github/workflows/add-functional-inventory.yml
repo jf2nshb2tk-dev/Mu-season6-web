@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Import original MU item assets
+      - name: Download original client items
         shell: bash
         run: |
           set -euo pipefail
@@ -28,361 +28,74 @@ jobs:
           sudo apt-get install -y unar >/dev/null
           rm -rf /tmp/mu && mkdir -p /tmp/mu
           unar -q -o /tmp/mu /tmp/ClientS6.Base.rar
-          ROOT='/tmp/mu/ClientS6 Base/Data/Item'
           mkdir -p assets/Item
           python3 - <<'PY'
           from pathlib import Path
           import struct, shutil
-
           root=Path('/tmp/mu/ClientS6 Base/Data/Item')
           out=Path('assets/Item')
           selected=['Staff01.bmd','Potion02.bmd','Potion05.bmd','Jewel01.bmd','Jewel02.bmd']
           filemap={p.name.lower():p for p in root.iterdir() if p.is_file()}
           key=[0xD1,0x73,0x52,0xF6,0xD2,0x9A,0xCB,0x27,0x3E,0xAF,0x59,0x31,0x37,0xB3,0xE7,0xA2]
-
           def dec(src):
               outb=bytearray(len(src)); mk=0x5E
               for i,v in enumerate(src):
                   outb[i]=((v^key[i&15])-mk)&255
                   mk=(v+0x3D)&255
               return bytes(outb)
-
           def textures(raw):
               b=raw
-              if b[:3]!=b'BMD':
-                  raise ValueError('not BMD')
-              ver=b[3]
-              if ver==12:
+              if b[:3]!=b'BMD': raise ValueError('not BMD')
+              if b[3]==12:
                   size=struct.unpack_from('<i',b,4)[0]
                   b=b[:4]+dec(b[8:8+size])
-              if b[:3]!=b'BMD':
-                  raise ValueError('bad decrypted BMD')
               p=36
               mc,bc,ac=struct.unpack_from('<HHH',b,p); p+=6
               tex=[]
               for _ in range(mc):
                   nv,nn,nt,ntr=struct.unpack_from('<hhhh',b,p); p+=10
                   p+=nv*16+nn*20+nt*8+ntr*64
-                  rawname=b[p:p+32].split(b'\0',1)[0]; p+=32
-                  name=rawname.decode('latin1','ignore').replace('\\','/').split('/')[-1]
+                  name=b[p:p+32].split(b'\0',1)[0].decode('latin1','ignore').replace('\\','/').split('/')[-1]; p+=32
                   if name: tex.append(name)
               return tex
-
           copied=[]
           for wanted in selected:
               src=filemap.get(wanted.lower())
-              if not src:
-                  raise SystemExit(f'Missing original item model: {wanted}')
-              dst=out/wanted
-              shutil.copy2(src,dst); copied.append(dst.name)
+              if not src: raise SystemExit('Missing original item model: '+wanted)
+              shutil.copy2(src,out/wanted); copied.append(wanted)
               for tex in textures(src.read_bytes()):
                   stem=Path(tex).stem
-                  ext=Path(tex).suffix.lower()
-                  expected=stem+('.OZT' if ext=='.tga' else '.OZJ')
+                  expected=stem+('.OZT' if Path(tex).suffix.lower()=='.tga' else '.OZJ')
                   cand=filemap.get(expected.lower())
                   if not cand:
-                      alt=stem+'.OZT' if expected.lower().endswith('.ozj') else stem+'.OZJ'
+                      alt=stem+('.OZT' if expected.lower().endswith('.ozj') else '.OZJ')
                       cand=filemap.get(alt.lower())
                   if not cand:
                       print('WARN missing texture',wanted,tex)
                       continue
-                  target=out/expected
-                  shutil.copy2(cand,target); copied.append(target.name)
-          print('Imported:', ', '.join(sorted(set(copied),key=str.lower)))
+                  shutil.copy2(cand,out/expected); copied.append(expected)
+          print('Imported:',', '.join(sorted(set(copied),key=str.lower)))
           PY
 
-      - name: Patch functional inventory and equipment
+      - name: Integrate functional inventory
+        run: python3 .github/scripts/patch-functional-inventory.py
+
+      - name: Validate JavaScript and required assets
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('index.html')
-          s=p.read_text()
-          marker='/* FUNCTIONAL MU INVENTORY V1 */'
-          if marker in s:
-              print('Functional inventory already present')
-              raise SystemExit(0)
-
-          css=r'''
-/* FUNCTIONAL MU INVENTORY V1 */
-#muInventoryGrid{position:absolute!important}
-.muInvCell{position:relative;z-index:1}
-#muEquipmentLayer{position:absolute;inset:0;z-index:4;pointer-events:none}
-.muEquipDrop{position:absolute;box-sizing:border-box;pointer-events:auto;touch-action:none;border:1px solid transparent;border-radius:3px}
-.muEquipDrop.muDropReady{border-color:#c9a94b88;box-shadow:inset 0 0 8px #d2ae4255}
-#muDropHelper{left:15px;top:44px;width:46px;height:46px}
-#muDropHelm{left:75px;top:44px;width:46px;height:46px}
-#muDropWing{left:120px;top:44px;width:61px;height:46px}
-#muDropWeaponR{left:15px;top:87px;width:46px;height:66px}
-#muDropArmor{left:75px;top:87px;width:46px;height:66px}
-#muDropWeaponL{left:135px;top:87px;width:46px;height:66px}
-#muDropGloves{left:15px;top:150px;width:46px;height:46px}
-#muDropPants{left:75px;top:150px;width:46px;height:46px}
-#muDropBoots{left:135px;top:150px;width:46px;height:46px}
-#muDropAmulet{left:54px;top:87px;width:28px;height:28px;z-index:3}
-#muDropRingR{left:54px;top:150px;width:28px;height:28px;z-index:3}
-#muDropRingL{left:114px;top:150px;width:28px;height:28px;z-index:3}
-.muInvItem{position:absolute;z-index:6;box-sizing:border-box;background-repeat:no-repeat;background-position:center;background-size:contain;filter:drop-shadow(0 1px 2px #000);touch-action:none;pointer-events:auto;border:1px solid transparent;border-radius:2px}
-.muInvItem:hover,.muInvItem.muSelected{border-color:#e8c65b;box-shadow:inset 0 0 5px #f0c94a88,0 0 4px #000}
-.muInvItem.muDragging{opacity:.38}
-.muInvQty{position:absolute;right:1px;bottom:0;color:#fff4bd;font:bold 8px/1 Arial;text-shadow:1px 1px 2px #000,-1px -1px 1px #000;pointer-events:none}
-.muEquipDrop .muInvItem{left:2px!important;top:2px!important;width:calc(100% - 4px)!important;height:calc(100% - 4px)!important}
-#muItemTooltip{display:none;position:fixed;z-index:40;min-width:132px;max-width:180px;padding:7px 8px;background:linear-gradient(#14120ef5,#030303f8);border:1px solid #927b42;border-radius:5px;box-shadow:0 4px 16px #000d;color:#d7d1c2;font:9px/1.35 Arial,sans-serif;pointer-events:none;text-shadow:1px 1px 1px #000}
-#muItemTooltip.open{display:block}
-#muItemTooltip .muTipName{color:#f3d875;font-weight:700;text-align:center;margin-bottom:4px}
-#muItemTooltip .muTipBlue{color:#78b8ff}#muItemTooltip .muTipGreen{color:#79e28c}#muItemTooltip .muTipReq{color:#c8b997}#muItemTooltip .muTipHint{color:#88806d;margin-top:4px;border-top:1px solid #4e432d;padding-top:3px}
-#muInventoryNotice{position:absolute;left:18px;top:181px;width:154px;height:14px;color:#cfb66f;font:bold 8px/14px Arial;text-align:center;text-shadow:1px 1px 2px #000;pointer-events:none;z-index:8;white-space:nowrap;overflow:hidden}
-.muDragGhost{position:fixed;z-index:50;width:42px;height:58px;transform:translate(-50%,-50%);background-repeat:no-repeat;background-position:center;background-size:contain;pointer-events:none;filter:drop-shadow(0 3px 4px #000);opacity:.9}
-'''
-          anchor='#muInvEmptyLabel{position:absolute;left:15px;top:340px;width:160px;text-align:center;color:#8e8369;font:9px Arial;pointer-events:none}\n'
-          if anchor not in s: raise SystemExit('CSS inventory anchor missing')
-          s=s.replace(anchor,anchor+css,1)
-
-          old='''  <div id="muInventoryGrid"></div><img id="muInvMoney" class="muInvBg"><div id="muZen">0 Zen</div><div id="muInvEmptyLabel">Inventario vacío</div>\n  <button id="muInventoryClose" aria-label="Cerrar inventario"></button>'''
-          new='''  <div id="muEquipmentLayer">\n    <div id="muDropHelper" class="muEquipDrop" data-equip="helper"></div><div id="muDropHelm" class="muEquipDrop" data-equip="helm"></div><div id="muDropWing" class="muEquipDrop" data-equip="wing"></div>\n    <div id="muDropWeaponR" class="muEquipDrop" data-equip="weaponR"></div><div id="muDropArmor" class="muEquipDrop" data-equip="armor"></div><div id="muDropWeaponL" class="muEquipDrop" data-equip="weaponL"></div>\n    <div id="muDropGloves" class="muEquipDrop" data-equip="gloves"></div><div id="muDropPants" class="muEquipDrop" data-equip="pants"></div><div id="muDropBoots" class="muEquipDrop" data-equip="boots"></div>\n    <div id="muDropAmulet" class="muEquipDrop" data-equip="amulet"></div><div id="muDropRingR" class="muEquipDrop" data-equip="ringR"></div><div id="muDropRingL" class="muEquipDrop" data-equip="ringL"></div>\n  </div>\n  <div id="muInventoryGrid"></div><img id="muInvMoney" class="muInvBg"><div id="muZen">0 Zen</div><div id="muInvEmptyLabel">Inventario vacío</div><div id="muInventoryNotice"></div>\n  <button id="muInventoryClose" aria-label="Cerrar inventario"></button>'''
-          if old not in s: raise SystemExit('Inventory HTML anchor missing')
-          s=s.replace(old,new,1)
-          char_anchor='''</div>\n\n\n<div id="muCharacter" role="dialog" aria-label="Personaje">'''
-          if char_anchor not in s: raise SystemExit('Character HTML anchor missing')
-          s=s.replace(char_anchor,'''</div>\n<div id="muItemTooltip"></div>\n\n\n<div id="muCharacter" role="dialog" aria-label="Personaje">''',1)
-
-          js=r'''
-
-const ITEM_DIR="assets/Item/";
-async function getItemBytes(name){
- const r=await fetch(ITEM_DIR+name,{cache:"no-store"});
- if(!r.ok)throw new Error("Item/"+name+" HTTP "+r.status);
- return new Uint8Array(await r.arrayBuffer());
-}
-function muItemAssetName(path){
- const f=path.split(String.fromCharCode(92)).join("/").split("/").pop(),dot=f.lastIndexOf("."),base=dot<0?f:f.slice(0,dot),ext=(dot<0?"":f.slice(dot+1)).toLowerCase();
- return base+(ext==="tga"?".OZT":".OZJ");
-}
-const muItemCanvasCache=new Map(),muItemTexCache=new Map(),muItemIconCache=new Map();
-async function itemTextureCanvas(path){
- const asset=muItemAssetName(path),key=asset.toLowerCase();
- if(muItemCanvasCache.has(key))return muItemCanvasCache.get(key);
- const promise=(async()=>{const b=await getItemBytes(asset);return asset.toLowerCase().endsWith(".ozt")?objectOzt(b):await objectOzj(b)})();
- muItemCanvasCache.set(key,promise);return promise;
-}
-async function itemTexture(path){
- const asset=muItemAssetName(path),key=asset.toLowerCase();
- if(muItemTexCache.has(key))return muItemTexCache.get(key);
- const promise=(async()=>playerRepeatTex(await itemTextureCanvas(path)))();muItemTexCache.set(key,promise);return promise;
-}
-function muCompileIconProgram(g,vs,fs){
- const sh=(t,src)=>{const x=g.createShader(t);g.shaderSource(x,src);g.compileShader(x);if(!g.getShaderParameter(x,g.COMPILE_STATUS))throw new Error(g.getShaderInfoLog(x));return x};
- const p=g.createProgram();g.attachShader(p,sh(g.VERTEX_SHADER,vs));g.attachShader(p,sh(g.FRAGMENT_SHADER,fs));g.linkProgram(p);if(!g.getProgramParameter(p,g.LINK_STATUS))throw new Error(g.getProgramInfoLog(p));return p;
-}
-let muIconGLState=null;
-function muGetIconGL(){
- if(muIconGLState)return muIconGLState;
- const canvas=document.createElement("canvas");canvas.width=canvas.height=96;
- const g=canvas.getContext("webgl2",{alpha:true,antialias:true,preserveDrawingBuffer:true,premultipliedAlpha:false});
- if(!g)throw new Error("WebGL2 icon renderer no disponible");
- const vs=`#version 300 es\nprecision highp float;layout(location=0)in vec3 aPos;layout(location=1)in vec3 aN;layout(location=2)in vec2 aUV;uniform vec4 uQ;uniform vec3 uCenter;uniform float uScale;out vec2 vUV;out vec3 vN;vec3 qr(vec4 q,vec3 v){return v+2.0*cross(q.xyz,cross(q.xyz,v)+q.w*v);}void main(){vec3 p=qr(uQ,aPos)-uCenter;p*=uScale;vN=normalize(qr(uQ,aN));vUV=aUV;gl_Position=vec4(p.x,p.z,clamp(-p.y*.18,-.92,.92),1.0);}`;
- const fs=`#version 300 es\nprecision highp float;in vec2 vUV;in vec3 vN;uniform sampler2D uTex;out vec4 o;void main(){vec4 c=texture(uTex,vUV);float mx=max(max(c.r,c.g),c.b),mn=min(min(c.r,c.g),c.b);if(c.a<.08||(mx<.025&&mx-mn<.015))discard;float d=.60+.55*max(dot(normalize(vN),normalize(vec3(.4,.65,.8))),0.0);o=vec4(c.rgb*d,c.a);}`;
- const prog=muCompileIconProgram(g,vs,fs);
- muIconGLState={canvas,g,prog,uQ:g.getUniformLocation(prog,"uQ"),uCenter:g.getUniformLocation(prog,"uCenter"),uScale:g.getUniformLocation(prog,"uScale"),uTex:g.getUniformLocation(prog,"uTex")};return muIconGLState;
-}
-async function muItemIconUrl(def){
- if(muItemIconCache.has(def.id))return muItemIconCache.get(def.id);
- const promise=(async()=>{
-   const meshes=parseBmd(await getItemBytes(def.model),null,0).filter(m=>m.data.length&&!/shadow/i.test(m.texture));
-   if(!meshes.length)throw new Error("Item sin malla "+def.model);
-   try{
-     const st=muGetIconGL(),g=st.g,q=quatEuler([-.43,.08,.34]);let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];
-     for(const m of meshes)for(let i=0;i<m.data.length;i+=8){const v=quatRot(q,[m.data[i],m.data[i+1],m.data[i+2]]);for(let a=0;a<3;a++){mn[a]=Math.min(mn[a],v[a]);mx[a]=Math.max(mx[a],v[a])}}
-     const center=[(mn[0]+mx[0])*.5,(mn[1]+mx[1])*.5,(mn[2]+mx[2])*.5],span=Math.max(mx[0]-mn[0],mx[2]-mn[2],1),scale=1.62/span;
-     g.viewport(0,0,96,96);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT|g.DEPTH_BUFFER_BIT);g.enable(g.DEPTH_TEST);g.disable(g.CULL_FACE);g.enable(g.BLEND);g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);g.useProgram(st.prog);g.uniform4fv(st.uQ,q);g.uniform3fv(st.uCenter,center);g.uniform1f(st.uScale,scale);g.uniform1i(st.uTex,0);g.activeTexture(g.TEXTURE0);
-     for(const m of meshes){
-       const vao=g.createVertexArray();g.bindVertexArray(vao);const vb=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,vb);g.bufferData(g.ARRAY_BUFFER,m.data,g.STATIC_DRAW);
-       g.enableVertexAttribArray(0);g.vertexAttribPointer(0,3,g.FLOAT,false,32,0);g.enableVertexAttribArray(1);g.vertexAttribPointer(1,3,g.FLOAT,false,32,12);g.enableVertexAttribArray(2);g.vertexAttribPointer(2,2,g.FLOAT,false,32,24);
-       const cv=await itemTextureCanvas(m.texture),tex=g.createTexture();g.bindTexture(g.TEXTURE_2D,tex);g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL,false);g.texImage2D(g.TEXTURE_2D,0,g.RGBA,g.RGBA,g.UNSIGNED_BYTE,cv);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);
-       g.drawArrays(g.TRIANGLES,0,m.data.length/8);g.deleteTexture(tex);g.deleteBuffer(vb);g.deleteVertexArray(vao);
-     }
-     g.finish();return st.canvas.toDataURL("image/png");
-   }catch(e){
-     console.warn("Icon renderer",def.id,e);const first=meshes[0];return (await itemTextureCanvas(first.texture)).toDataURL("image/png");
-   }
- })();muItemIconCache.set(def.id,promise);return promise;
-}
-
-const MU_ITEM_DEFS={
- staff01:{id:"staff01",name:"Skull Staff",model:"Staff01.bmd",w:1,h:3,equip:["weaponR"],type:"Staff",damage:[3,4],magic:6,requirement:"Strength 40",className:"Dark Wizard",stackMax:1},
- hpSmall:{id:"hpSmall",name:"Small Healing Potion",model:"Potion02.bmd",w:1,h:1,type:"Potion",description:"Recupera vida.",stackMax:255},
- mpSmall:{id:"mpSmall",name:"Small Mana Potion",model:"Potion05.bmd",w:1,h:1,type:"Potion",description:"Recupera mana.",stackMax:255},
- bless:{id:"bless",name:"Jewel of Bless",model:"Jewel01.bmd",w:1,h:1,type:"Jewel",description:"Joya de mejora de objetos.",stackMax:1},
- soul:{id:"soul",name:"Jewel of Soul",model:"Jewel02.bmd",w:1,h:1,type:"Jewel",description:"Joya de mejora de objetos.",stackMax:1}
-};
-let muInventoryItems=[],muEquipment={helper:null,helm:null,wing:null,weaponR:null,armor:null,weaponL:null,gloves:null,pants:null,boots:null,amulet:null,ringR:null,ringL:null},muItemUid=100,muSelectedSource=null,muEquipmentRevision=0,muNoticeTimer=0;
-const MU_INV_STORAGE="mu-s6-inventory-v1";
-function muDefaultInventory(){return[
- {uid:1,id:"staff01",qty:1,slot:0},{uid:2,id:"hpSmall",qty:15,slot:2},{uid:3,id:"mpSmall",qty:15,slot:3},{uid:4,id:"bless",qty:1,slot:10},{uid:5,id:"soul",qty:1,slot:11}
-]}
-function muLoadInventory(){
- try{const x=JSON.parse(localStorage.getItem(MU_INV_STORAGE)||"null");if(x&&Array.isArray(x.items)&&x.equipment){muInventoryItems=x.items.filter(i=>MU_ITEM_DEFS[i.id]);for(const k of Object.keys(muEquipment))muEquipment[k]=x.equipment[k]&&MU_ITEM_DEFS[x.equipment[k].id]?x.equipment[k]:null;muItemUid=Math.max(100,...muInventoryItems.map(i=>+i.uid||0),...Object.values(muEquipment).filter(Boolean).map(i=>+i.uid||0))+1;return}}catch(e){console.warn("Inventory save",e)}
- muInventoryItems=muDefaultInventory();muItemUid=101;
-}
-function muSaveInventory(){try{localStorage.setItem(MU_INV_STORAGE,JSON.stringify({items:muInventoryItems,equipment:muEquipment}))}catch(e){}}
-function muDef(item){return item?MU_ITEM_DEFS[item.id]:null}
-function muGridItemAt(cell,ignore=[]){
- const skip=new Set(ignore);for(const it of muInventoryItems){if(skip.has(it.uid))continue;const d=muDef(it),r=Math.floor(it.slot/8),c=it.slot%8,tr=Math.floor(cell/8),tc=cell%8;if(tc>=c&&tc<c+d.w&&tr>=r&&tr<r+d.h)return it}return null;
-}
-function muCanPlace(item,cell,ignore=[]){
- const d=muDef(item),r=Math.floor(cell/8),c=cell%8;if(c+d.w>8||r+d.h>8)return false;
- for(let yy=0;yy<d.h;yy++)for(let xx=0;xx<d.w;xx++)if(muGridItemAt((r+yy)*8+c+xx,ignore))return false;return true;
-}
-function muFindFree(item,ignore=[]){for(let i=0;i<64;i++)if(muCanPlace(item,i,ignore))return i;return-1}
-function muGetSource(src){if(!src)return null;if(src.kind==="grid")return muInventoryItems.find(i=>i.uid===src.uid)||null;if(src.kind==="equip")return muEquipment[src.slot]||null;return null}
-function muDetach(src,item){if(src.kind==="grid")muInventoryItems=muInventoryItems.filter(i=>i.uid!==item.uid);else if(src.kind==="equip")muEquipment[src.slot]=null}
-function muAttachGrid(item,cell){item.slot=cell;if(!muInventoryItems.some(i=>i.uid===item.uid))muInventoryItems.push(item)}
-function muAttachEquip(item,slot){delete item.slot;muEquipment[slot]=item}
-function muInventoryNotice(msg){const el=$("#muInventoryNotice");if(!el)return;el.textContent=msg;clearTimeout(muNoticeTimer);muNoticeTimer=setTimeout(()=>{if(el.textContent===msg)el.textContent=""},1400)}
-function muMarkEquipmentChange(slot){if(slot==="weaponR"||slot==="weaponL")muEquipmentRevision++}
-function muMoveItem(src,dst){
- const item=muGetSource(src);if(!item)return false;const d=muDef(item);
- if(dst.kind==="equip"){
-   if(!d.equip||!d.equip.includes(dst.slot)){muInventoryNotice("Ese ítem no va en esa ranura");return false}
-   if(src.kind==="equip"&&src.slot===dst.slot)return true;
-   const old=muEquipment[dst.slot];
-   if(old){
-     if(src.kind==="grid"){
-       const sourceCell=item.slot;if(!muCanPlace(old,sourceCell,[item.uid])){muInventoryNotice("No hay espacio para intercambiar");return false}
-       muDetach(src,item);muEquipment[dst.slot]=item;delete item.slot;old.slot=sourceCell;muInventoryItems.push(old);muMarkEquipmentChange(dst.slot);
-     }else{
-       const od=muDef(old);if(!od.equip||!od.equip.includes(src.slot)){muInventoryNotice("No se pueden intercambiar");return false}
-       muEquipment[src.slot]=old;muEquipment[dst.slot]=item;muMarkEquipmentChange(src.slot);muMarkEquipmentChange(dst.slot);
-     }
-   }else{muDetach(src,item);muAttachEquip(item,dst.slot);muMarkEquipmentChange(dst.slot);if(src.kind==="equip")muMarkEquipmentChange(src.slot)}
- }else if(dst.kind==="grid"){
-   const cell=dst.cell,target=muGridItemAt(cell,[item.uid]);
-   if(target&&target.uid!==item.uid&&target.id===item.id&&d.stackMax>1){
-     const room=d.stackMax-target.qty,add=Math.min(room,item.qty);if(add<=0){muInventoryNotice("Stack completo");return false}target.qty+=add;item.qty-=add;if(item.qty<=0)muDetach(src,item);muInventoryNotice("Stack "+target.qty);if(src.kind==="equip")muMarkEquipmentChange(src.slot);
-   }else if(target&&target.uid!==item.uid){
-     if(src.kind!=="grid"){muInventoryNotice("Casilla ocupada");return false}
-     const a=item.slot,b=target.slot;if(!muCanPlace(item,b,[item.uid,target.uid])||!muCanPlace(target,a,[item.uid,target.uid])){muInventoryNotice("No entra ahí");return false}item.slot=b;target.slot=a;
-   }else{
-     if(!muCanPlace(item,cell,[item.uid])){muInventoryNotice("No entra ahí");return false}
-     muDetach(src,item);muAttachGrid(item,cell);if(src.kind==="equip")muMarkEquipmentChange(src.slot);
-   }
- }
- muSelectedSource=null;muSaveInventory();renderMuInventory();return true;
-}
-function muTooltipHtml(item){
- const d=muDef(item);let h='<div class="muTipName">'+d.name+(item.qty>1?' x'+item.qty:'')+'</div><div>'+d.type+'</div>';
- if(d.damage)h+='<div class="muTipBlue">Damage '+d.damage[0]+' ~ '+d.damage[1]+'</div>';
- if(d.magic)h+='<div class="muTipBlue">Magic Power +'+d.magic+'%</div>';
- if(d.description)h+='<div class="muTipGreen">'+d.description+'</div>';
- if(d.requirement)h+='<div class="muTipReq">Requires '+d.requirement+'</div>';
- if(d.className)h+='<div class="muTipReq">'+d.className+'</div>';
- h+='<div class="muTipHint">Tocá y luego tocá otra casilla · también podés arrastrar</div>';return h;
-}
-function muShowTooltip(item,x,y){const t=$("#muItemTooltip");if(!t)return;t.innerHTML=muTooltipHtml(item);t.classList.add("open");const w=180,h=115;t.style.left=Math.max(6,Math.min(innerWidth-w-6,(x||innerWidth*.5)+10))+"px";t.style.top=Math.max(6,Math.min(innerHeight-h-6,(y||innerHeight*.5)-25))+"px"}
-function muHideTooltip(){const t=$("#muItemTooltip");if(t)t.classList.remove("open")}
-function muSourceFromEl(el){return el.dataset.source==="equip"?{kind:"equip",slot:el.dataset.equip}:{kind:"grid",uid:+el.dataset.uid}}
-function muTargetAtPoint(x,y){
- const el=document.elementFromPoint(x,y);if(!el)return null;const eq=el.closest?.(".muEquipDrop");if(eq)return{kind:"equip",slot:eq.dataset.equip};const item=el.closest?.(".muInvItem");if(item){const src=muSourceFromEl(item),it=muGetSource(src);return src.kind==="equip"?{kind:"equip",slot:src.slot}:{kind:"grid",cell:it?.slot??0}}const cell=el.closest?.(".muInvCell");if(cell)return{kind:"grid",cell:+cell.dataset.slot};return null;
-}
-function muMakeItemElement(item,src){
- const d=muDef(item),el=document.createElement("div");el.className="muInvItem";el.dataset.uid=item.uid;el.dataset.source=src.kind;el.dataset.equip=src.slot||"";el.title=d.name;
- if(src.kind==="grid"){const r=Math.floor(item.slot/8),c=item.slot%8;el.style.left=(c*20)+"px";el.style.top=(r*20)+"px";el.style.width=(d.w*20)+"px";el.style.height=(d.h*20)+"px"}
- if(item.qty>1){const q=document.createElement("span");q.className="muInvQty";q.textContent=item.qty;el.appendChild(q)}
- if(muSelectedSource&&JSON.stringify(muSelectedSource)===JSON.stringify(src))el.classList.add("muSelected");
- muItemIconUrl(d).then(url=>{if(el.isConnected)el.style.backgroundImage='url("'+url+'")'}).catch(e=>console.warn("Item icon",d.id,e));
- let pd=null,ghost=null,dragging=false;
- el.addEventListener("pointerenter",e=>muShowTooltip(item,e.clientX,e.clientY));el.addEventListener("pointerleave",()=>{if(!muSelectedSource)muHideTooltip()});
- el.addEventListener("pointerdown",e=>{e.preventDefault();e.stopPropagation();pd={id:e.pointerId,x:e.clientX,y:e.clientY};el.setPointerCapture?.(e.pointerId);muShowTooltip(item,e.clientX,e.clientY)});
- el.addEventListener("pointermove",e=>{if(!pd||e.pointerId!==pd.id)return;const dist=Math.hypot(e.clientX-pd.x,e.clientY-pd.y);if(dist>7&&!dragging){dragging=true;el.classList.add("muDragging");ghost=document.createElement("div");ghost.className="muDragGhost";if(el.style.backgroundImage)ghost.style.backgroundImage=el.style.backgroundImage;document.body.appendChild(ghost)}if(ghost){ghost.style.left=e.clientX+"px";ghost.style.top=e.clientY+"px"}});
- const finish=e=>{if(!pd||e.pointerId!==pd.id)return;e.preventDefault();e.stopPropagation();if(ghost)ghost.remove();el.classList.remove("muDragging");const srcNow=muSourceFromEl(el);if(dragging){const dst=muTargetAtPoint(e.clientX,e.clientY);if(dst)muMoveItem(srcNow,dst)}else if(muSelectedSource){if(JSON.stringify(muSelectedSource)===JSON.stringify(srcNow)){if(d.equip?.length)muMoveItem(srcNow,{kind:"equip",slot:d.equip[0]});else{muSelectedSource=null;renderMuInventory();muHideTooltip()}}else{const sel=muGetSource(muSelectedSource);if(sel){if(srcNow.kind==="grid")muMoveItem(muSelectedSource,{kind:"grid",cell:item.slot});else muMoveItem(muSelectedSource,{kind:"equip",slot:srcNow.slot})}}}else{muSelectedSource=srcNow;renderMuInventory();muShowTooltip(item,e.clientX,e.clientY)}pd=null;dragging=false};
- el.addEventListener("pointerup",finish);el.addEventListener("pointercancel",e=>{if(ghost)ghost.remove();el.classList.remove("muDragging");pd=null;dragging=false});return el;
-}
-function renderMuInventory(){
- const grid=$("#muInventoryGrid"),layer=$("#muEquipmentLayer");if(!grid||!layer)return;for(const x of grid.querySelectorAll(".muInvItem"))x.remove();for(const z of layer.querySelectorAll(".muEquipDrop")){for(const x of z.querySelectorAll(".muInvItem"))x.remove();z.classList.toggle("muDropReady",!!muSelectedSource&&!!muDef(muGetSource(muSelectedSource))?.equip?.includes(z.dataset.equip))}
- for(const it of muInventoryItems)grid.appendChild(muMakeItemElement(it,{kind:"grid",uid:it.uid}));for(const [slot,it] of Object.entries(muEquipment))if(it){const z=layer.querySelector('[data-equip="'+slot+'"]');if(z)z.appendChild(muMakeItemElement(it,{kind:"equip",slot}))}
- $("#muInvEmptyLabel").style.display=muInventoryItems.length?"none":"block";
-}
-async function initMuInventorySystem(){
- muLoadInventory();const grid=$("#muInventoryGrid"),layer=$("#muEquipmentLayer");
- grid.addEventListener("pointerup",e=>{if(!muSelectedSource)return;const c=e.target.closest?.(".muInvCell");if(c){e.preventDefault();e.stopPropagation();muMoveItem(muSelectedSource,{kind:"grid",cell:+c.dataset.slot})}});
- for(const z of layer.querySelectorAll(".muEquipDrop"))z.addEventListener("pointerup",e=>{if(!muSelectedSource||e.target.closest?.(".muInvItem"))return;e.preventDefault();e.stopPropagation();muMoveItem(muSelectedSource,{kind:"equip",slot:z.dataset.equip})});
- renderMuInventory();
- // Prewarm the five original icons without blocking the UI.
- Promise.all(Object.values(MU_ITEM_DEFS).map(d=>muItemIconUrl(d).catch(()=>null))).then(renderMuInventory);
-}
-async function buildHeldItemVisual(def){
- const meshes=parseBmd(await getItemBytes(def.model),null,0),idata=new Float32Array([0,0,0,.85,0,0,0,1]);const inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.DYNAMIC_DRAW);const renders=[];
- for(const m of meshes){if(!m.data.length||/shadow/i.test(m.texture))continue;const vao=gl.createVertexArray();gl.bindVertexArray(vao);const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,m.data,gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,32,24);gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,4,gl.FLOAT,false,32,0);gl.vertexAttribDivisor(3,1);gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,32,16);gl.vertexAttribDivisor(4,1);renders.push({vao,count:m.data.length/8,n:1,tex:await itemTexture(m.texture)})}
- return{renders,instanceBuffer:inst,instanceData:idata,handIndex:-1,defId:def.id};
-}
-'''
-          js_anchor='''const playerStats={name:"DarkWizard",className:"Dark Wizard",level:1,life:100,lifeMax:100,mana:120,manaMax:120,ag:100,agMax:100,sd:0,sdMax:0,exp:0,expMax:1000,zen:0,statPoints:0,strength:18,dexterity:18,vitality:15,energy:30};\n'''
-          if js_anchor not in s: raise SystemExit('playerStats anchor missing')
-          s=s.replace(js_anchor,js_anchor+js,1)
-
-          init_old=''' const cellUrl=await uiAssetUrl("newui_item_box.OZT"),grid=$("#muInventoryGrid");\n for(let i=0;i<64;i++){const c=document.createElement("div");c.className="muInvCell";c.style.backgroundImage='url("'+cellUrl+'")';c.dataset.slot=i;grid.appendChild(c)}\n document.body.classList.add("mu-ui-ready");resizeMuInterface();updateMuHudUI();'''
-          init_new=''' const cellUrl=await uiAssetUrl("newui_item_box.OZT"),grid=$("#muInventoryGrid");\n for(let i=0;i<64;i++){const c=document.createElement("div");c.className="muInvCell";c.style.backgroundImage='url("'+cellUrl+'")';c.dataset.slot=i;grid.appendChild(c)}\n await initMuInventorySystem();\n document.body.classList.add("mu-ui-ready");resizeMuInterface();updateMuHudUI();'''
-          if init_old not in s: raise SystemExit('init interface anchor missing')
-          s=s.replace(init_old,init_new,1)
-
-          anim_old='''   const bones=samplePlayerRig(playerScene.rig,nextAction,playerScene.animTime).bones;\n   for(const r of playerScene.renders){'''
-          anim_new='''   const bones=samplePlayerRig(playerScene.rig,nextAction,playerScene.animTime).bones;\n   playerScene.currentBones=bones;\n   for(const r of playerScene.renders){'''
-          if anim_old not in s: raise SystemExit('animation anchor missing')
-          s=s.replace(anim_old,anim_new,1)
-
-          scene_old=''' let objectScene={renders:[],instances:0,failed:0},npcScene={renders:[],npcs:[],count:0,failed:[]},playerScene={renders:[],parts:0,meshes:0,tile:[138,124]},objectsReady=false,npcsReady=false,playerReady=false;'''
-          scene_new=scene_old+r'''
- let heldItemScene={renders:[],instanceBuffer:null,instanceData:null,handIndex:-1,defId:null},heldVisualRevision=-1,heldBuildBusy=false;
- function muFindRightHandIndex(){
-   if(!playerReady||!playerScene.rig?.bones)return-1;const names=playerScene.rig.bones.map((b,i)=>({i,n:(b.name||"").toLowerCase()}));
-   for(const re of [/r[ _.-]*hand/,/right[ _.-]*hand/,/hand[ _.-]*r/]){const q=names.find(x=>re.test(x.n));if(q)return q.i}const h=names.filter(x=>x.n.includes("hand"));return h.length?h[h.length-1].i:-1;
- }
- function syncHeldItemVisual(){
-   if(!playerReady||heldBuildBusy||heldVisualRevision===muEquipmentRevision)return;heldVisualRevision=muEquipmentRevision;const it=muEquipment.weaponR,def=muDef(it);
-   if(!def){heldItemScene={renders:[],instanceBuffer:null,instanceData:null,handIndex:-1,defId:null};return}
-   heldBuildBusy=true;buildHeldItemVisual(def).then(x=>{x.handIndex=muFindRightHandIndex();heldItemScene=x;console.log("Equipped visual",def.name,"hand",x.handIndex,playerScene.rig?.bones?.[x.handIndex]?.name)}).catch(e=>console.warn("Held item",e)).finally(()=>heldBuildBusy=false);
- }
- function updateHeldItemTransform(){
-   if(!playerReady||!heldItemScene.instanceBuffer||heldItemScene.handIndex<0||!playerScene.currentBones)return;const hand=playerScene.currentBones[heldItemScene.handIndex];if(!hand)return;const pd=playerScene.instanceData,pq=[pd[4],pd[5],pd[6],pd[7]],ps=pd[3],hp=[hand.p[0]*ps,hand.p[1]*ps,hand.p[2]*ps],rp=quatRot(pq,hp),pos=[pd[0]+rp[0],pd[1]+rp[1],pd[2]+rp[2]],hq=quatMul(pq,hand.q),corr=quatEuler([0,0,0]),q=quatMul(hq,corr),d=heldItemScene.instanceData;
-   d[0]=pos[0];d[1]=pos[1];d[2]=pos[2];d[3]=ps;d[4]=q[0];d[5]=q[1];d[6]=q[2];d[7]=q[3];gl.bindBuffer(gl.ARRAY_BUFFER,heldItemScene.instanceBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,d);
- }
- function drawHeldItem(){
-   if(!heldItemScene.renders.length)return;gl.uniform1i(objBlackKey,1);for(const r of heldItemScene.renders){gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,1)}gl.uniform1i(objBlackKey,0);
- }'''
-          if scene_old not in s: raise SystemExit('scene anchor missing')
-          s=s.replace(scene_old,scene_new,1)
-
-          frame_old='''   updateFreeCamera(dt);\n   updatePlayerAnimation(dt);\n   const f=cameraForward(),eye=[camX,camY,camZ];'''
-          frame_new='''   updateFreeCamera(dt);\n   updatePlayerAnimation(dt);\n   syncHeldItemVisual();updateHeldItemTransform();\n   const f=cameraForward(),eye=[camX,camY,camZ];'''
-          if frame_old not in s: raise SystemExit('frame anchor missing')
-          s=s.replace(frame_old,frame_new,1)
-
-          render1='''     for(const r of playerScene.renders){\n       gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);\n       gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);\n     }\n     gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);'''
-          render1_new='''     for(const r of playerScene.renders){\n       gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);\n       gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);\n     }\n     drawHeldItem();\n     gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);'''
-          if render1 not in s: raise SystemExit('render branch 1 anchor missing')
-          s=s.replace(render1,render1_new,1)
-          render2='''     for(const r of playerScene.renders){gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n)}\n     gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);'''
-          render2_new='''     for(const r of playerScene.renders){gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n)}\n     drawHeldItem();\n     gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);'''
-          if render2 not in s: raise SystemExit('render branch 2 anchor missing')
-          s=s.replace(render2,render2_new,1)
-
-          p.write_text(s)
-          print('Functional inventory patched')
-          PY
-
-      - name: Validate browser JavaScript
-        shell: bash
-        run: |
+          node --check functional-inventory.js
           python3 - <<'PY'
           from pathlib import Path
           import re
           s=Path('index.html').read_text()
           scripts=re.findall(r'<script>(.*?)</script>',s,re.S)
-          if not scripts: raise SystemExit('No script found')
-          Path('/tmp/app.js').write_text(scripts[-1])
+          for i,script in enumerate(scripts):
+              Path(f'/tmp/app-{i}.js').write_text(script)
           PY
-          node --check /tmp/app.js
+          for f in /tmp/app-*.js; do node --check "$f"; done
+          grep -q 'functional-inventory.js?v=1' index.html
+          grep -q 'muEquipmentVisualTick(playerScene)' index.html
           test -f assets/Item/Staff01.bmd
           test -f assets/Item/Potion02.bmd
           test -f assets/Item/Potion05.bmd
