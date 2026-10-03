@@ -1,0 +1,49 @@
+name: Phone MU HUD Layout
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mobile-hud-phone-layout.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply phone-only HUD layout
+        run: python3 scripts/mobile_hud_phone_layout.py
+      - name: Validate phone HUD layout
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('index.html','utf8');
+          const m=s.match(/<script>([\s\S]*?)<\/script>/);
+          if(!m) throw new Error('script not found');
+          new Function(m[1]);
+          for(const q of [
+            'PHONE_ONLY_MU_HUD_LAYOUT',
+            'id="muMobileButtons"',
+            'function isPhoneMuHud()',
+            'document.body.classList.toggle("mu-phone-hud",phone)',
+            'mobileButtons.appendChild(b)',
+            'muHud.appendChild(b)',
+            '#muHudMenu1{clip-path:inset(0 0 0 150px)}',
+            '#muHudMenu3{clip-path:inset(0 153px 0 0)}'
+          ]) if(!s.includes(q)) throw new Error('missing '+q);
+          console.log('Phone-only HUD layout JS/CSS OK');
+          NODE
+      - name: Commit phone HUD layout
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index changes'; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Move mobile joystick into HUD and float menu buttons'
+          git push origin HEAD:main
