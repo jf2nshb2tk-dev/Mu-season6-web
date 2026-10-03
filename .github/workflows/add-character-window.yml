@@ -41,10 +41,24 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
+          # Keep the patch script compatible with the current compact HUD source.
           p=Path('scripts/add_character_window.py')
           s=p.read_text(encoding='utf-8')
           s=s.replace(' const grid=$("#muInventoryGrid");',' const cellUrl=await uiAssetUrl("newui_item_box.OZT"),grid=$("#muInventoryGrid");')
+          s=s.replace("ctx='''function openNpcDialog(n){\n if(!n||npcDistance(n)>NPC_INTERACT_RANGE+.8)return;\n if(inventoryOpen)setInventoryOpen(false);'''",
+                      "ctx='''function openNpcDialog(n){\n   if(!n||npcDistance(n)>NPC_INTERACT_RANGE+.8)return;\n   if(inventoryOpen)setInventoryOpen(false);'''")
           p.write_text(s,encoding='utf-8')
+
+          # The current key handler is intentionally compact; expand only its formatting
+          # so the semantic character-window patch can match it deterministically.
+          i=Path('index.html')
+          h=i.read_text(encoding='utf-8')
+          compact='window.addEventListener("keydown",e=>{if(e.code==="KeyI"){e.preventDefault();setInventoryOpen(!inventoryOpen);return}if(e.code==="Escape"&&inventoryOpen){e.preventDefault();setInventoryOpen(false);return}keys.add(e.code);if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code))e.preventDefault()},{passive:false});'
+          expanded='''window.addEventListener("keydown",e=>{\n if(e.code==="KeyI"){e.preventDefault();setInventoryOpen(!inventoryOpen);return}\n if(e.code==="Escape"&&inventoryOpen){e.preventDefault();setInventoryOpen(false);return}\n keys.add(e.code);if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code))e.preventDefault()},{passive:false});'''
+          if compact in h:
+              h=h.replace(compact,expanded,1)
+          i.write_text(h,encoding='utf-8')
           PY
           python3 scripts/add_character_window.py
 
