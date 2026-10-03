@@ -169,6 +169,7 @@ body.mu-phone-hud #npcAction{bottom:max(108px,calc(env(safe-area-inset-bottom) +
 
 @media (orientation:portrait){#rotate{display:flex}#gl,#hud,#hint,#joyBase,#camButtons,#npcAction,#npcNameplate,#npcDialog{visibility:hidden}}
 </style>
+<link rel="stylesheet" href="functional-inventory.css?v=1">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -207,9 +208,16 @@ body.mu-phone-hud #npcAction{bottom:max(108px,calc(env(safe-area-inset-bottom) +
   <img id="muEqWeaponR" class="muEquipSlot"><img id="muEqArmor" class="muEquipSlot"><img id="muEqWeaponL" class="muEquipSlot">
   <img id="muEqGloves" class="muEquipSlot"><img id="muEqPants" class="muEquipSlot"><img id="muEqBoots" class="muEquipSlot">
   <img id="muEqAmulet" class="muEquipSlot"><img id="muEqRingR" class="muEquipSlot"><img id="muEqRingL" class="muEquipSlot">
-  <div id="muInventoryGrid"></div><img id="muInvMoney" class="muInvBg"><div id="muZen">0 Zen</div><div id="muInvEmptyLabel">Inventario vacío</div>
+  <div id="muEquipmentLayer">
+    <div id="muDropHelper" class="muEquipDrop" data-equip="helper"></div><div id="muDropHelm" class="muEquipDrop" data-equip="helm"></div><div id="muDropWing" class="muEquipDrop" data-equip="wing"></div>
+    <div id="muDropWeaponR" class="muEquipDrop" data-equip="weaponR"></div><div id="muDropArmor" class="muEquipDrop" data-equip="armor"></div><div id="muDropWeaponL" class="muEquipDrop" data-equip="weaponL"></div>
+    <div id="muDropGloves" class="muEquipDrop" data-equip="gloves"></div><div id="muDropPants" class="muEquipDrop" data-equip="pants"></div><div id="muDropBoots" class="muEquipDrop" data-equip="boots"></div>
+    <div id="muDropAmulet" class="muEquipDrop" data-equip="amulet"></div><div id="muDropRingR" class="muEquipDrop" data-equip="ringR"></div><div id="muDropRingL" class="muEquipDrop" data-equip="ringL"></div>
+  </div>
+  <div id="muInventoryGrid"></div><img id="muInvMoney" class="muInvBg"><div id="muZen">0 Zen</div><div id="muInvEmptyLabel">Inventario vacío</div><div id="muInventoryNotice"></div>
   <button id="muInventoryClose" aria-label="Cerrar inventario"></button>
 </div>
+<div id="muItemTooltip"></div>
 
 
 <div id="muCharacter" role="dialog" aria-label="Personaje">
@@ -789,6 +797,7 @@ async function initMuInterface(){
  for(const el of document.querySelectorAll(".muCharPlus"))el.style.backgroundImage='url("'+charPlus+'")';
  const cellUrl=await uiAssetUrl("newui_item_box.OZT"),grid=$("#muInventoryGrid");
  for(let i=0;i<64;i++){const c=document.createElement("div");c.className="muInvCell";c.style.backgroundImage='url("'+cellUrl+'")';c.dataset.slot=i;grid.appendChild(c)}
+ await initMuInventorySystem();
  document.body.classList.add("mu-ui-ready");resizeMuInterface();updateMuHudUI();
 }
 muInventoryBtn.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();setInventoryOpen(!inventoryOpen)});
@@ -1140,6 +1149,7 @@ async function main(){
    const playSpeed=nextAction===1?.28:nextAction===15?.38:.34;
    playerScene.animTime+=dt*playSpeed*25;
    const bones=samplePlayerRig(playerScene.rig,nextAction,playerScene.animTime).bones;
+   playerScene.currentBones=bones;
    for(const r of playerScene.renders){
      r.skinData=skinRawMesh(r.raw,bones,r.skinData);
      gl.bindBuffer(gl.ARRAY_BUFFER,r.vb);
@@ -1214,6 +1224,7 @@ async function main(){
    if(playerReady&&controlModeName!=="player")playerScene.moveAmount=0;
    updateFreeCamera(dt);
    updatePlayerAnimation(dt);
+   if(playerReady)muEquipmentVisualTick(playerScene);
    const f=cameraForward(),eye=[camX,camY,camZ];
    const look=controlModeName==="player"?[targetX,targetY,targetZ]:[camX+f[0],camY+f[1],camZ+f[2]];
    const vp=mul(perspective(.72,canvas.width/canvas.height,.1,1800),lookAt(eye,look,[0,1,0]));
@@ -1262,11 +1273,13 @@ async function main(){
        gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);
        gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n);
      }
+     muDrawHeldItem();
      gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
    } else if(playerScene.renders.length||npcScene.renders.length){
      gl.useProgram(objProg);gl.uniformMatrix4fv(objVP,false,vp);gl.uniform1i(objSampler,0);gl.uniform1i(objBlackKey,0);gl.uniform1i(objHideObject,0);gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.activeTexture(gl.TEXTURE0);
      for(const r of npcScene.renders){gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n)}
      for(const r of playerScene.renders){gl.bindTexture(gl.TEXTURE_2D,r.tex);gl.bindVertexArray(r.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,r.count,r.n)}
+     muDrawHeldItem();
      gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
    }
 
@@ -1386,6 +1399,9 @@ async function main(){
  },{passive:false});
  requestAnimationFrame(frame);
 }
+</script>
+<script src="functional-inventory.js?v=1"></script>
+<script>
 initMuInterface().catch(e=>console.warn("MU Interface",e));
 main().catch(fail);
 </script>
