@@ -31,12 +31,13 @@ let castingUntil=0;
 function canCast(s){if(!s)return"No skill";if(!window.MUWorld?.ready||!window.MUSkillEffects?.ready)return"Cargando poderes";if(MUWorld.blocked||window.MUSkillUI?.isOpen)return"Cerrá la ventana para usar el poder";if(performance.now()<castingUntil)return"Lanzando poder";const p=MUWorld.player;if(s.damage>0&&MUWorld.isSafe(p.x,p.y))return"Zona segura: salí de Lorencia para atacar";if(cooldownLeft(s.id)>0)return"Cooldown";if(playerStats.mana<s.mana)return"Sin mana";return""}
 function performCast(s,clientX,clientY,source="mouse",forcedTarget=null){
 const reason=canCast(s);if(reason){window.dispatchEvent(new CustomEvent("mu-skill-error",{detail:{reason,skill:s}}));return false}
+ const profile=MUSkillEffects.profile(s);
  const from={...MUWorld.player},target=forcedTarget||window.MUCombat?.findScreenTarget(clientX,clientY,95)||null;
- const to=s.damage===0?{...from}:target?{x:target.x,y:target.y,z:target.z}:MUWorld.pick(clientX,clientY);
+ const to=profile.origin==="self"&&(s.damage===0||s.kind==="area")?{...from}:target?{x:target.x,y:target.y,z:target.z}:MUWorld.pick(clientX,clientY);
  const range=s.range||(["melee","combo"].includes(s.kind)?4:22);
  const invalid=!to?"Apuntá al terreno":s.damage>0&&MUWorld.isSafe(to.x,to.y)?"El objetivo está en zona segura":Math.hypot(to.x-from.x,to.y-from.y)>range?"Objetivo fuera de alcance":"";
  if(invalid){window.dispatchEvent(new CustomEvent("mu-skill-error",{detail:{reason:invalid,skill:s}}));return false}
- const now=performance.now(),castId=++castSeq,profile=MUSkillEffects.profile(s);
+ const now=performance.now(),castId=++castSeq;
  playerStats.mana=Math.max(0,playerStats.mana-s.mana);cooldowns.set(s.id,now+s.cooldown);castingUntil=now+profile.duration;
  try{updateMuHudUI()}catch(_){}
  const detail={castId,skillId:s.id,skill:s,source,screenX:clientX,screenY:clientY,targetId:target?.id||null,timestamp:now,from,to,action:profile.action,duration:profile.duration,impactMs:profile.impactMs};
@@ -65,7 +66,7 @@ function nearest(s){
 function use(basic=false){
  const s=basic?basicSkill():skill(selected),reason=canCast(s);
  if(reason){window.dispatchEvent(new CustomEvent("mu-skill-error",{detail:{reason,skill:s}}));return false}
- if(s.damage===0)return performCast(s,0,0,"button");
+ if(MUSkillEffects.profile(s).origin==="self"&&(s.damage===0||s.kind==="area"))return performCast(s,0,0,"button");
  const target=nearest(s);
  if(target)return performCast(s,target.screenX,target.screenY,"button",target);
  arm(basic);return false;

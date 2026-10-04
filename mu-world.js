@@ -28,6 +28,7 @@ window.MUWorld={town,flagsAt,isSafe,canSpawn,findSpawn,
  get blocked(){return !api||api.blocked()},
  heightAt:(x,y)=>api?.heightAt(x,y)||0,
  pick:(x,y)=>api?.pick(x,y)||null,
+ socket:bone=>api?.socket?.(bone)||null,
  cast:detail=>api?.cast(detail),
  configure(data,bridge){flags=data;api=bridge;
    // Only place enemies on the walkable region connected to the player's spawn.

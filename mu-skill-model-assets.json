@@ -1,0 +1,185 @@
+{
+  "Skill/Poison01.bmd": {
+    "textures": {
+      "wall01.jpg": "Skill/wall01.OZJ",
+      "wall02.jpg": "Skill/wall02.OZJ"
+    }
+  },
+  "Skill/Stone01.bmd": {
+    "textures": {
+      "fire02.jpg": "Skill/fire02.OZJ"
+    }
+  },
+  "Skill/Fire01.bmd": {
+    "textures": {
+      "fire02.jpg": "Skill/fire02.OZJ",
+      "fire01.jpg": "Skill/fire01.OZJ"
+    }
+  },
+  "Skill/Ice01.bmd": {
+    "textures": {
+      "ice.jpg": "Skill/ice.OZJ"
+    }
+  },
+  "Skill/Storm01.bmd": {
+    "textures": {
+      "typhoon.jpg": "Skill/typhoon.OZJ"
+    }
+  },
+  "Skill/Circle01.bmd": {
+    "textures": {
+      "magic_a01.jpg": "Skill/magic_a01.OZJ"
+    }
+  },
+  "Skill/Magic01.bmd": {
+    "textures": {
+      "magic_b.jpg": "Skill/magic_b.OZJ"
+    }
+  },
+  "Skill/Blast01.bmd": {
+    "textures": {
+      "ring2.jpg": "Skill/ring2.OZJ"
+    }
+  },
+  "Skill/Inferno01.bmd": {
+    "textures": {
+      "ring3.jpg": "Skill/ring3.OZJ",
+      "ring4.jpg": "Skill/ring4.OZJ"
+    }
+  },
+  "Skill/Protect01.bmd": {
+    "textures": {
+      "curer.jpg": "Skill/curer.OZJ"
+    }
+  },
+  "Skill/Protect02.bmd": {
+    "textures": {
+      "Soul_Ba.jpg": "Skill/Soul_Ba.OZJ"
+    }
+  },
+  "Skill/Arrow01.bmd": {
+    "textures": {
+      "arrow.jpg": "Skill/arrow.OZJ",
+      "fire01.jpg": "Skill/fire01.OZJ"
+    }
+  },
+  "Skill/blizzard.bmd": {
+    "textures": {
+      "ice.jpg": "Skill/ice.OZJ"
+    }
+  },
+  "Skill/GroundStone.bmd": {
+    "textures": {
+      "DhorSS.jpg": "Skill/DhorSS.OZJ",
+      "DhorSS_R.jpg": "Skill/DhorSS_R.OZJ"
+    }
+  },
+  "Skill/deathsp_eff.bmd": {
+    "textures": {
+      "e3.tga": "Skill/e3.OZT"
+    }
+  },
+  "Skill/RidingSpear01.bmd": {
+    "textures": {
+      "MMn2.jpg": "Skill/MMn2.OZJ"
+    }
+  },
+  "Skill/ArrowV01.bmd": {
+    "textures": {
+      "v.jpg": "Skill/v.OZJ"
+    }
+  },
+  "Skill/ArrowLaser01.bmd": {
+    "textures": {
+      "bow_c.jpg": "Skill/bow_c.OZJ"
+    }
+  },
+  "Skill/SwordForce.bmd": {
+    "textures": {
+      "knightSt.jpg": "Skill/knightSt.OZJ"
+    }
+  },
+  "Skill/Magic02.bmd": {
+    "textures": {
+      "magic_g.jpg": "Skill/magic_g.OZJ"
+    }
+  },
+  "Skill/combo.bmd": {
+    "textures": {
+      "combo3.jpg": "Skill/combo3.OZJ"
+    }
+  },
+  "Skill/WaveForce.bmd": {
+    "textures": {
+      "GroundEff.jpg": "Skill/GroundEff.OZJ"
+    }
+  },
+  "Skill/EarthQuake01.bmd": {
+    "textures": {
+      "fury.jpg": "Skill/fury.OZJ"
+    }
+  },
+  "Skill/Circle02.bmd": {
+    "textures": {
+      "magic_a02.jpg": "Skill/magic_a02.OZJ"
+    }
+  },
+  "Skill/DarkLordSkill.bmd": {
+    "textures": {
+      "KingS_R.jpg": "Skill/KingS_R.OZJ"
+    }
+  },
+  "Skill/airforce.bmd": {
+    "textures": {
+      "SpiE_R.jpg": "Skill/SpiE_R.OZJ"
+    }
+  },
+  "Skill/ArrowNature01.bmd": {
+    "textures": {
+      "bowtt2.jpg": "Skill/bowtt2.OZJ",
+      "bowtt.jpg": "Skill/bowtt.OZJ"
+    }
+  },
+  "Skill/darkfirescrem02.bmd": {
+    "textures": {
+      "chainring3.tga": "Skill/chainring3.OZT"
+    }
+  },
+  "Skill/summon_sahamutt.bmd": {
+    "textures": {
+      "firemutt.jpg": "Skill/firemutt.OZJ",
+      "sahaffur.tga": "Skill/sahaffur.OZT"
+    }
+  },
+  "Skill/summon_neil.bmd": {
+    "textures": {
+      "maskreta01.jpg": "Skill/maskreta01.OZJ",
+      "gra.jpg": "Skill/gra.OZJ",
+      "maskreta03.tga": "Skill/maskreta03.OZT"
+    }
+  },
+  "Skill/summon_lagul.bmd": {
+    "textures": {
+      "lagulbody.jpg": "Skill/lagulbody.OZJ",
+      "lagulpinna.jpg": "Skill/lagulpinna.OZJ",
+      "watermarkhik01.JPG": "Skill/watermarkhik01.OZJ"
+    }
+  },
+  "Skill/ArrowDouble01.bmd": {
+    "textures": {
+      "crossB.jpg": "Skill/crossB.OZJ",
+      "ring2.jpg": "Skill/ring2.OZJ"
+    }
+  },
+  "Effect/FlameStrike.bmd": {
+    "textures": {
+      "firehik02.JPG": "Effect/firehik02.OZJ",
+      "flamestani.jpg": "Effect/flamestani.OZJ"
+    }
+  },
+  "Skill/dragonhead.bmd": {
+    "textures": {
+      "drhead.JPG": "Skill/drhead.OZJ"
+    }
+  }
+}

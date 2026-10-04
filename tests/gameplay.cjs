@@ -27,4 +27,13 @@ const occupied=new Set(),spawns=[];
 for(const def of c.spawnDefs)for(const seed of def.spawns){const p=world.findSpawn(...seed,occupied);const key=Math.floor(p[1])*256+Math.floor(p[0]);assert(!occupied.has(key));occupied.add(key);spawns.push(p);assert(world.canSpawn(...p));assert(!world.isSafe(...p))}
 assert.equal(spawns.length,32);
 for(const [x,y] of [[94,126],[175,126],[133,87],[133,169]])assert(spawns.filter(p=>Math.hypot(p[0]-x,p[1]-y)<12).length>=4,'each exit needs a visible nearby group');
+const manifest=JSON.parse(fs.readFileSync('mu-skill-model-assets.json','utf8'));
+for(const [file,def] of Object.entries(manifest)){
+ c.effectBytes=new Uint8Array(fs.readFileSync('assets/'+file));
+ const meshes=vm.runInContext('parseBmd(effectBytes)',c);assert(meshes.length,'empty model '+file);
+ for(const mesh of meshes){assert(mesh.data.every(Number.isFinite),'nonfinite model '+file);assert(fs.existsSync('assets/'+def.textures[mesh.texture]),'missing model texture '+mesh.texture)}
+}
+assert.equal(c.window.MUSkillEffects.profile(c.MUGameData.skills[5]).mode,'flame');
+assert.equal(c.window.MUSkillEffects.profile(c.MUGameData.skills[14]).origin,'self');
+assert.equal(c.window.MUSkillEffects.profile(c.MUGameData.skills[219]).origin,'target');
 console.log('PASS: 32 distinct reachable spawns across all four exits; city courtyards, all spawns, safe-zone damage, area hits, all skill textures/BMD action frames');

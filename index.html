@@ -1047,6 +1047,11 @@ async function main(){
    player:()=>playerReady?{x:playerScene.tilePos[0],y:playerScene.tilePos[1],z:terrainHeightAt(...playerScene.tilePos),facing:playerScene.facing}:null,
    blocked:()=>npcDialogOpen||inventoryOpen||characterOpen,
    heightAt:terrainHeightAt,pick:pickSkillGround,
+   socket:bone=>{
+     const b=playerScene?.currentBones?.[bone],d=playerScene?.instanceData;if(!b||!d)return null;
+     const v=quatRot(Array.from(d.slice(4,8)),b.p.map(x=>x*d[3]));
+     return{x:(d[0]+v[0])/100,y:(d[1]+v[1])/100,z:d[2]+v[2]};
+   },
    cast:detail=>{
      if(!playerReady)return;
      const action=detail.action,clip=playerScene.rig.actions[action];
@@ -1439,7 +1444,7 @@ async function main(){
  requestAnimationFrame(frame);
 }
 </script>
-<script src="functional-inventory.js?v=monster-gates2"></script>
+<script src="functional-inventory.js?v=skill-fx3"></script>
 <script>
 initMuInterface().catch(e=>console.warn("MU Interface",e));
 main().catch(fail);
