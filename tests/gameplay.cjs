@@ -21,4 +21,10 @@ vm.runInContext(fs.readFileSync('mu-combat.js','utf8'),c);c.MUCombat=c.window.MU
 const safe=c.MUCombat.registerMonster({id:'safe',x:140,y:128,hp:100});assert.equal(c.MUCombat.damage('safe',20),0);assert.equal(safe.hp,100);
 const a=c.MUCombat.registerMonster({id:'a',x:180.5,y:120.5,hp:100}),b=c.MUCombat.registerMonster({id:'b',x:181,y:120.5,hp:100});
 c.window.dispatchEvent(new CustomEvent('mu-skill-hit',{detail:{from:{x:179,y:120},to:{x:180.5,y:120.5},skill:{kind:'area'},radius:3.2,damage:20}}));assert.equal(a.hp,80);assert.equal(b.hp,80);
-console.log('PASS: city courtyards, all spawns, safe-zone damage, area hits, all skill textures/BMD action frames');
+const monsterSource=fs.readFileSync('mu-monster-system.js','utf8');
+vm.runInContext(monsterSource.slice(monsterSource.indexOf('const modelDefs='),monsterSource.indexOf('const texCache='))+';var spawnDefs=modelDefs;',c);
+const occupied=new Set(),spawns=[];
+for(const def of c.spawnDefs)for(const seed of def.spawns){const p=world.findSpawn(...seed,occupied);const key=Math.floor(p[1])*256+Math.floor(p[0]);assert(!occupied.has(key));occupied.add(key);spawns.push(p);assert(world.canSpawn(...p));assert(!world.isSafe(...p))}
+assert.equal(spawns.length,32);
+for(const [x,y] of [[94,126],[175,126],[133,87],[133,169]])assert(spawns.filter(p=>Math.hypot(p[0]-x,p[1]-y)<12).length>=4,'each exit needs a visible nearby group');
+console.log('PASS: 32 distinct reachable spawns across all four exits; city courtyards, all spawns, safe-zone damage, area hits, all skill textures/BMD action frames');

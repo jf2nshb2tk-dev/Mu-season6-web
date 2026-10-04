@@ -5,12 +5,13 @@ if(window.MUMonsters)return;
 const MONSTER_DIR="assets/Monster/";
 const state={assetsReady:false,ready:false,manifest:null,groups:[],active:new Map(),failed:[],lastFrame:performance.now()};
 const modelDefs=[
- {key:"bull",name:"Bull Fighter",model:"Monster01.bmd",hp:95,scale:.86,spawns:[[180.5,120.5],[183.5,126.5]]},
- {key:"hound",name:"Hound",model:"Monster02.bmd",hp:75,scale:.84,spawns:[[178.5,123.5],[180.5,130.5]]},
- {key:"budge",name:"Budge Dragon",model:"Monster03.bmd",hp:120,scale:.82,spawns:[[185.5,122.5]]},
- {key:"spider",name:"Spider",model:"Monster10.bmd",hp:55,scale:.82,spawns:[[177.5,119.5],[177.5,133.5]]}
+ {key:"bull",name:"Bull Fighter",model:"Monster01.bmd",hp:95,scale:.86,spawns:[[181.5,122.5],[184.5,129.5],[87.5,122.5],[84.5,129.5],[131.5,79.5],[137.5,76.5],[131.5,175.5],[138.5,179.5]]},
+ {key:"hound",name:"Hound",model:"Monster02.bmd",hp:75,scale:.84,spawns:[[178.5,123.5],[180.5,130.5],[91.5,123.5],[89.5,130.5],[131.5,83.5],[137.5,81.5],[131.5,171.5],[137.5,174.5]]},
+ {key:"budge",name:"Budge Dragon",model:"Monster03.bmd",hp:120,scale:.82,spawns:[[185.5,122.5],[187.5,132.5],[83.5,121.5],[81.5,132.5],[128.5,77.5],[140.5,74.5],[129.5,181.5],[141.5,184.5]]},
+ {key:"spider",name:"Spider",model:"Monster10.bmd",hp:55,scale:.82,spawns:[[177.5,126.5],[177.5,133.5],[92.5,126.5],[91.5,134.5],[134.5,85.5],[138.5,84.5],[134.5,170.5],[139.5,172.5]]}
 ];
 const texCache=new Map();
+const occupiedSpawns=new Set();
 let lowerFiles=new Map(),heightMap=null,overlay=null,ctx=null,damagePops=[];
 
 function exactFile(name){return lowerFiles.get(String(name).toLowerCase())||name}
@@ -63,7 +64,8 @@ async function buildGroup(def){
  try{rig=parsePlayerRig(raw);if(rig.actions.length)bones=samplePlayerRig(rig,0,0).bones}catch(e){console.warn("Monster rig",def.model,e)}
  const meshes=parseBmd(raw,bones,0),mobs=[];
  for(let i=0;i<def.spawns.length;i++){
-   const [x,y]=MUWorld.findSpawn(...def.spawns[i]),m=MUCombat.registerMonster({id:def.key+"-"+(i+1),name:def.name,hp:def.hp,maxHp:def.hp,hitRadius:52,x,y,z:terrainHeightAt(x,y),spawnX:x,spawnY:y,scale:def.scale,respawnAt:0});
+   const [x,y]=MUWorld.findSpawn(...def.spawns[i],occupiedSpawns),m=MUCombat.registerMonster({id:def.key+"-"+(i+1),name:def.name,hp:def.hp,maxHp:def.hp,hitRadius:52,x,y,z:terrainHeightAt(x,y),spawnX:x,spawnY:y,scale:def.scale,respawnAt:0});
+   occupiedSpawns.add(Math.floor(y)*256+Math.floor(x));
    m.model=def.model;mobs.push(m);state.active.set(m.id,m);
  }
  const idata=new Float32Array(mobs.length*8),inst=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,inst);gl.bufferData(gl.ARRAY_BUFFER,idata,gl.DYNAMIC_DRAW);
@@ -81,7 +83,7 @@ function updateGroup(g,dt,now){
  }
  let o=0;
  for(const m of g.mobs){
-   if(!MUWorld.canSpawn(m.x,m.y)){const p=MUWorld.findSpawn(m.spawnX,m.spawnY);m.x=m.spawnX=p[0];m.y=m.spawnY=p[1];m.z=terrainHeightAt(m.x,m.y)}
+   if(!MUWorld.canSpawn(m.x,m.y)){const p=MUWorld.findSpawn(m.spawnX,m.spawnY,occupiedSpawns);occupiedSpawns.delete(Math.floor(m.spawnY)*256+Math.floor(m.spawnX));occupiedSpawns.add(Math.floor(p[1])*256+Math.floor(p[0]));m.x=m.spawnX=p[0];m.y=m.spawnY=p[1];m.z=terrainHeightAt(m.x,m.y)}
    if(!m.alive&&m.respawnAt&&now>=m.respawnAt){m.hp=m.maxHp;m.alive=true;m.respawnAt=0;m.x=m.spawnX;m.y=m.spawnY;m.z=terrainHeightAt(m.x,m.y)}
    const q=quatEuler([0,0,Math.PI*.75]);
    g.instanceData[o++]=m.x*100;g.instanceData[o++]=m.y*100;g.instanceData[o++]=m.z;g.instanceData[o++]=m.alive?m.scale:0;

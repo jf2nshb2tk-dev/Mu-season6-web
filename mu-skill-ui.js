@@ -37,6 +37,13 @@ body.mu-skills-open #joyBase,body.mu-skills-open #muCombatControls{opacity:.2;po
 body.mu-inventory-open #muCombatControls,body.mu-character-open #muCombatControls{opacity:.2;pointer-events:none}
 @media(max-height:500px){#muCombatControls{width:128px;grid-template-columns:repeat(2,56px);gap:6px;bottom:max(64px,calc(env(safe-area-inset-bottom) + 60px))}.muActionButton{width:56px;height:56px}.muActionButton .muSkillIcon{left:16px;top:10px;transform:scale(1.2)}.muActionCd{line-height:48px}#muBasicAttack{width:66px;height:66px}#muBasicAttack svg{left:15px;top:7px}#muBasicAttack .muBasicLabel{bottom:7px;font-size:8px}#muBasicAttack .muActionCd{line-height:58px}#muOpenSkills{height:26px;font-size:10px}#muSkillWindow{height:calc(100dvh - 20px)}#muSkillWindow header{padding-top:0;padding-bottom:0}#muCloseSkills{height:34px}#muSkillAssignHint{margin-top:5px}.muAssignSlot{min-height:42px}#muSkillList{grid-template-columns:repeat(4,minmax(0,1fr))}.muSkillListCell{padding:5px;gap:6px;font-size:10px}}
 @media(max-width:540px){#muAssignSlots{gap:4px}.muAssignSlot{gap:3px;font-size:9px}#muSkillList{grid-template-columns:repeat(2,minmax(0,1fr))}}
+#muCombatControls{transform-origin:bottom right}
+#muCombatControls.mu-combat-compact{width:196px;grid-template-columns:56px 56px 66px;gap:6px}
+#muCombatControls.mu-combat-compact [data-slot="0"]{grid-area:2/1}
+#muCombatControls.mu-combat-compact [data-slot="1"]{grid-area:2/2}
+#muCombatControls.mu-combat-compact [data-slot="2"]{grid-area:3/1}
+#muCombatControls.mu-combat-compact [data-slot="3"]{grid-area:3/2}
+#muCombatControls.mu-combat-compact #muBasicAttack{grid-area:2/3/4/4;align-self:center}
 @media(orientation:portrait){#muCombatControls,#muSkillsBackdrop,#muSkillMessage{visibility:hidden}}
 `;
 document.head.appendChild(css);
@@ -103,6 +110,24 @@ function tick(){
   b.classList.toggle('low-mana',b!==basic&&playerStats.mana<(MUGameData.skills[id]?.mana||0));
  }requestAnimationFrame(tick);
 }
+// Keep SKILLS below the actual menu bar, including Safari's changing viewport.
+function layoutControls(){
+ const menu=document.querySelector('#muMobileButtons'),hud=document.querySelector('#muHud');
+ const menuRect=menu?.getBoundingClientRect(),hudRect=hud?.getBoundingClientRect();
+ const vv=window.visualViewport,visibleTop=vv?.offsetTop||0,visibleBottom=visibleTop+(vv?.height||innerHeight);
+ const top=Math.max(visibleTop+10,menuRect?.height?menuRect.bottom+10:0);
+ const bottom=Math.min(innerHeight-64,visibleBottom-14,hudRect?.height?hudRect.top-8:innerHeight-64);
+ const available=Math.max(80,bottom-top);
+ controls.classList.toggle('mu-combat-compact',available<(innerHeight<=500?230:266));
+ controls.style.bottom=Math.max(14,innerHeight-bottom)+'px';
+ controls.style.transform='scale('+Math.min(1,available/controls.offsetHeight)+')';
+}
+let layoutQueued=false;
+function scheduleLayout(){if(layoutQueued)return;layoutQueued=true;requestAnimationFrame(()=>{layoutQueued=false;layoutControls()})}
+window.addEventListener('resize',scheduleLayout);window.addEventListener('orientationchange',scheduleLayout);
+window.visualViewport?.addEventListener('resize',scheduleLayout);window.visualViewport?.addEventListener('scroll',scheduleLayout);
+if(window.ResizeObserver){const observer=new ResizeObserver(scheduleLayout);for(const id of ['muMobileButtons','muHud']){const el=document.getElementById(id);if(el)observer.observe(el)}}
+scheduleLayout();
 window.MUSkillUI={render,open,close,get isOpen(){return isOpen}};
 render();requestAnimationFrame(tick);
 Promise.all(['newui_skill.OZJ','newui_skill2.OZJ','newui_skill3.OZJ'].map(async name=>{atlasUrls[name]=await uiAssetUrl(name)})).then(render).catch(e=>console.warn('MU skill icons',e));
